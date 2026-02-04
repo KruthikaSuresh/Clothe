@@ -1323,6 +1323,11 @@ def render_upload_screen():
     has_img = img is not None
 
     with st.sidebar:
+        st.markdown("### 🔍 Gemini Debug")
+        st.write("HAS_GEMINI =", HAS_GEMINI)
+        st.write("API_KEYS =", len(API_KEYS))
+        st.write("CURRENT_KEY exists =", bool(CURRENT_KEY))
+
         st.markdown("### ⚙️ Preferences")
 
         category = st.radio(
