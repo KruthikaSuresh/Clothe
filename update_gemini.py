@@ -67,9 +67,12 @@ html, body, [class*="css"], .stMarkdown, p, li, div {
     line-height: 1.55 !important;
 }
 
-/* Force light canvas even if browser/OS is dark */
+/* Force light canvas even if browser/OS is dark (v16 theme) */
+html, body { background: #f7f7f9 !important; }
 .stApp { background: #f7f7f9 !important; }
-section.main > div { padding-top: 18px; }
+[data-testid="stAppViewContainer"], [data-testid="stMain"] { background: #f7f7f9 !important; }
+.block-container { background: #f7f7f9 !important; padding-bottom: 3rem !important; }
+section.main > div { padding-top: 18px; padding-bottom: 24px; }
 
 h1, h2, h3 {
     font-family: 'Cormorant Garamond', serif !important;
@@ -104,6 +107,32 @@ hr { border: none; border-top: 1px solid rgba(0,0,0,0.08); margin: 26px 0; }
 [data-testid="stSidebar"] {
     background: #f2f3f6 !important;
     border-right: 1px solid rgba(0,0,0,0.08);
+}
+
+/* Sidebar polish: prevent the "cut off" look */
+[data-testid="stSidebar"] {
+    height: 100vh !important;
+    min-height: 100vh !important;
+    position: sticky !important;
+    top: 0 !important;
+    align-self: flex-start;
+    box-shadow: 10px 0 28px rgba(0,0,0,0.06);
+}
+
+/* Add consistent inner padding + ensure sidebar scroll feels natural */
+[data-testid="stSidebar"] > div:first-child {
+    max-height: 100vh !important;
+    height: 100vh !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    -webkit-overflow-scrolling: touch;
+    padding: 16px 14px 24px 14px !important;
+    box-sizing: border-box;
+}
+
+/* Make the sidebar header area feel less clipped */
+[data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
+    gap: 0.75rem;
 }
 
 /* Tighter buttons */
@@ -155,6 +184,34 @@ div[data-baseweb="select"] div {
 .pill.small{ padding:4px 8px; font-size:12px !important; opacity:0.92; }
 .badge{ display:inline-block; padding:6px 10px; border-radius:999px; background:rgba(0,0,0,0.06); border:1px solid rgba(0,0,0,0.08); font-weight:800; font-size:13px !important; }
 .card-tight{ padding:14px 16px; }
+
+
+/* --- Two-pane layout: sticky image + normal page scroll ---
+   Option A: allow main page scrolling, keep image sticky so the page never looks empty.
+   This is the most reliable approach across Safari/Chrome.
+*/
+
+/* Allow normal page scrolling */
+html, body {
+  height: auto;
+  overflow: auto !important;
+}
+
+[data-testid="stAppViewContainer"],
+[data-testid="stMain"],
+section.main,
+.stApp {
+  height: auto !important;
+  overflow: visible !important;
+}
+
+/* Sticky left pane */
+.sticky-left {
+  position: sticky;
+  top: 16px;
+  align-self: flex-start;
+}
+
 </style>
 """
 st.markdown(STYLING, unsafe_allow_html=True)
@@ -1379,6 +1436,104 @@ def render_gemini_insight_full(insight: dict, analysis_mode_ui: str):
         st.markdown(f"<div class='muted'>{explanation}</div>", unsafe_allow_html=True)
 
 
+
+def render_center_upload_panel():
+    """Centered upload step shown until an image is committed to session_state.
+
+    UX goals:
+    - Make it obvious where to upload
+    - Avoid an awkward 'dead bottom' by explaining what happens next
+    """
+    st.markdown("## Step 1 — Upload a photo")
+    st.caption("Best results: face visible, natural daylight, no heavy filters. JPG/PNG/WebP works great.")
+
+    #st.info(
+       #     "⬇️ Upload your image here to get your Gemini insights. "
+       # "After you upload, the image controls move to the left sidebar so you can swap images anytime."
+   # )
+
+    uploaded = st.file_uploader(
+        "Upload a selfie (face-visible works best for complexion)",
+        type=["jpg", "jpeg", "png", "webp"],
+        key="uploader_center",
+        label_visibility="visible",
+    )
+
+    if uploaded is not None:
+        # Preview stays compact and centered
+        try:
+            st.image(uploaded, caption="Preview", use_container_width=True)
+        except Exception:
+            pass
+
+    c1, c2 = st.columns([1, 1])
+    with c1:
+        use = st.button(
+            "✅ Use this upload",
+            use_container_width=True,
+            disabled=(uploaded is None),
+            key="btn_use_center",
+        )
+    with c2:
+        clear = st.button("🗑️ Clear", use_container_width=True, key="btn_clear_center")
+
+    if clear:
+        for k in ["img_bytes", "img_name", "img_mime", "img_hash", "style", "lookbook", "gemini_insight"]:
+            st.session_state.pop(k, None)
+        st.rerun()
+
+    if use and uploaded is not None:
+        save_uploaded_file_to_state(uploaded)
+        # Reset derived state
+        st.session_state.pop("style", None)
+        st.session_state.pop("lookbook", None)
+        st.session_state.pop("gemini_insight", None)
+        st.rerun()
+
+    # Make the bottom feel intentional instead of empty
+    st.markdown(
+        '''
+        <div class="card" style="margin-top:16px;">
+            <div style="font-weight:800; font-size:16px; margin-bottom:6px;">What happens next</div>
+            <div class="small-muted" style="line-height:1.5;">
+                <div>1) We analyze your complexion + outfit cues to recommend a palette.</div>
+                <div>2) You'll get <b>Gemini Insights</b> and one-click access to <b>Lookbook & Shopping</b> curated to your colors.</div>
+                <div style="margin-top:10px;">Tip: Use a front-facing photo in daylight. Avoid strong filters and colored lighting.</div>
+            </div>
+        </div>
+        ''',
+        unsafe_allow_html=True,
+    )
+
+
+
+def render_sidebar_image_controls():
+    """Sidebar controls to swap/clear image after one has been uploaded."""
+    st.markdown("### 📸 Image")
+    uploaded = st.file_uploader(
+        "Change image",
+        type=["jpg", "png", "jpeg", "webp"],
+        key="uploader_sidebar",
+        label_visibility="visible",
+    )
+
+    colA, colB = st.columns(2)
+    with colA:
+        if st.button("➕ Use", use_container_width=True, key="btn_use_sidebar"):
+            if uploaded is not None:
+                save_uploaded_file_to_state(uploaded)
+                for k in ["style", "lookbook", "gemini_insight"]:
+                    st.session_state.pop(k, None)
+                st.rerun()
+            else:
+                st.warning("Upload an image first.")
+    with colB:
+        if st.button("🗑️ Clear", use_container_width=True, key="btn_clear_sidebar"):
+            for k in ["img_bytes", "img_name", "img_mime", "img_hash", "style", "lookbook", "gemini_insight"]:
+                st.session_state.pop(k, None)
+            st.rerun()
+
+
 def render_upload_screen():
     st.markdown(
         '''
@@ -1390,7 +1545,10 @@ def render_upload_screen():
         unsafe_allow_html=True,
     )
 
-    # Sidebar controls (original flow: collection + region live here)
+    img = get_image_from_state()
+    has_img = img is not None
+
+    # Sidebar controls (preferences always; image controls move here after upload)
     with st.sidebar:
         st.markdown("### ⚙️ Preferences")
 
@@ -1412,57 +1570,27 @@ def render_upload_screen():
         st.session_state["country"] = country
 
         st.markdown("---")
-        
-       
+
         # Single-mode for hackathon: always use complexion
         st.session_state["analysis_mode_ui"] = "Complexion (recommended)"
         st.session_state["analysis_mode_committed"] = "Complexion (recommended)"
-        
-        st.markdown("---")
-        st.markdown("### 📸 Image Input")
-        uploaded = st.file_uploader(
-            "Upload a photo (selfie/face-visible works best for complexion)",
-            type=["jpg", "png", "jpeg"],
-            key="uploader_main",
-        )
-
-        colA, colB = st.columns(2)
-        with colA:
-            if st.button("➕ Use this upload", use_container_width=True):
-                if uploaded is not None:
-                    save_uploaded_file_to_state(uploaded)
-                    st.session_state.pop("style", None)
-                    st.session_state.pop("lookbook", None)
-                    st.rerun()
-                else:
-                    st.warning("Upload an image first.")
-        with colB:
-            if st.button("🗑️ Clear image", use_container_width=True):
-                for k in ["img_bytes", "img_name", "img_mime", "img_hash", "style", "lookbook"]:
-                    st.session_state.pop(k, None)
-                st.rerun()
-
 
         st.markdown("---")
-        st.markdown("### 🚀 Explore")
-        if st.session_state.get("style"):
-            if st.button("Open Lookbook & Shopping", use_container_width=True):
-                # Ensure we have a lookbook ready
-                style = st.session_state.get("style", {}) or {}
-                news, celebs = get_country_context(st.session_state.get("country", "United States"), st.session_state.get("category", "Women"))
-                st.session_state["lookbook"] = gemini_lookbook_text(st.session_state.get("country", "United States"), st.session_state.get("category", "Women"), style, news, celebs)
-                navigate_to("lookbook")
+
+        if has_img:
+            # After an image exists, image controls live in the sidebar so the user can swap anytime.
+            render_sidebar_image_controls()
         else:
-            st.caption("Analyze a photo to unlock Lookbook & Shopping.")
+            st.markdown("### 📸 Image")
+            st.caption("Upload in the center panel to begin. After you upload, controls appear here for quick changes.")
 
         st.markdown("---")
-        if st.button("↻ Reset app", use_container_width=True):
+        if st.button("↻ Reset app", use_container_width=True, key="btn_reset_sidebar"):
             st.session_state.clear()
             st.rerun()
 
-        st.caption("ℹ️ Palette is analyzed locally. If a Gemini API key is set, Gemini 3 also analyzes your photo (vision) to extract outfit style + accessories, and generates the regional lookbook.")
-
-    # Top status bar (compact + always visible)
+        st.caption("ℹ️ Palette is analyzed locally. If a Gemini API key is set, Gemini also analyzes your photo (vision) for outfit style + accessories, and generates the regional lookbook.")
+# Top status bar (compact + always visible)
     category = st.session_state.get("category", "Women")
     country = st.session_state.get("country", "United States")
     mode = st.session_state.get("analysis_mode_ui", "Complexion (recommended)")
@@ -1473,25 +1601,22 @@ def render_upload_screen():
         f"</div>",
         unsafe_allow_html=True,
     )
-    st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
 
-    img = get_image_from_state()
-    if img is None:
-        st.markdown("<div class='card'>", unsafe_allow_html=True)
-        st.subheader("Upload to begin")
-        st.caption("Use the sidebar to choose Collection/Region, then upload a photo and click **Use this upload**.")
-        st.markdown("</div>", unsafe_allow_html=True)
-
-
+    if not has_img:
+        # Teach the user where to upload: centered Step 1 panel
+        render_center_upload_panel()
         return
 
-    col1, col2 = st.columns([1, 1], gap="large")
+
+    col1, col2 = st.columns([1.05, 0.95], gap="large")
 
     with col1:
+        st.markdown("<div class='sticky-left'>", unsafe_allow_html=True)
         st.markdown("<div class='card'>", unsafe_allow_html=True)
         st.subheader("Your Upload")
         st.caption(st.session_state.get("img_name", "uploaded image"))
-        st.image(img, width=460)
+        st.image(img, use_container_width=True)
 
         analyze_label = "✨ Analyze style" if "style" not in st.session_state else "🔁 Re-analyze (same image)"
         if st.button(analyze_label, type="primary", use_container_width=True):
@@ -1537,20 +1662,20 @@ def render_upload_screen():
             st.session_state.pop("lookbook", None)
             st.rerun()
 
-        st.markdown("</div>", unsafe_allow_html=True)
-
 
         st.markdown("<div class='card' style='margin-top:14px;'>", unsafe_allow_html=True)
         st.subheader("Photo tips (for best complexion results)")
         st.caption("Use a selfie/face-visible photo in daylight. Avoid heavy filters. If no face is detected, the app will fall back to outfit-based colors.")
         st.markdown("</div>", unsafe_allow_html=True)
 
-    with col2:
+        st.markdown("</div>", unsafe_allow_html=True)
 
+    with col2:
         # Gemini insight (moved to right panel)
         insight = st.session_state.get("gemini_insight")
         if insight:
-            st.markdown("<div class='card' style='margin-top:14px;'>", unsafe_allow_html=True)
+            # First element inside the scroll panel: keep it flush to top
+            st.markdown("<div class='card' style='margin-top:0px;'>", unsafe_allow_html=True)
             with st.expander("✨ Gemini 3 Insight (style + color reasoning)", expanded=True):
                 if insight.get("outfit_summary"):
                     st.markdown(
@@ -1649,7 +1774,49 @@ def render_upload_screen():
                     st.markdown("<div style='margin-top:10px;'><b>Why these colors work</b></div>", unsafe_allow_html=True)
                     st.caption(str(insight.get("explanation")))
             
+        
+        else:
+            # Helpful placeholder so the right panel never looks empty
+            st.markdown("<div class='card' style='margin-top:0px;'>", unsafe_allow_html=True)
+            with st.expander("✨ Gemini 3 Insight (style + color reasoning)", expanded=True):
+                st.markdown("**Run analysis to unlock insights.**")
+                st.caption("Click **Analyze style** on the left to generate color reasoning, outfit summary, and pairings for your region.")
+                st.markdown(
+                    "<div class='card card-tight' style='background:#f6f7fb;'>"
+                    "<b>What you'll get</b>"
+                    "<ul style='margin:8px 0 0 18px;'>"
+                    "<li>Best palette + morning/evening suggestions</li>"
+                    "<li>Why the colors work for you</li>"
+                    "<li>Suggested outfit pairings</li>"
+                    "</ul>"
+                    "</div>",
+                    unsafe_allow_html=True,
+                )
+            st.markdown("</div>", unsafe_allow_html=True)
+
         style = st.session_state.get("style")
+
+        # Next step CTA lives in the main flow (not the sidebar)
+        if style:
+            st.markdown("<div class='card' style='margin-top:12px;'>", unsafe_allow_html=True)
+            st.markdown("#### 🚀 Next step")
+            st.caption("Open your regional lookbook and shopping picks based on your suggested colors + style.")
+            if st.button("Open Lookbook & Shopping", use_container_width=True, key="btn_open_lookbook_main"):
+                news, celebs = get_country_context(
+                    st.session_state.get("country", "United States"),
+                    st.session_state.get("category", "Women"),
+                )
+                st.session_state["lookbook"] = gemini_lookbook_text(
+                    st.session_state.get("country", "United States"),
+                    st.session_state.get("category", "Women"),
+                    style,
+                    news,
+                    celebs,
+                )
+                navigate_to("lookbook")
+            st.markdown("</div>", unsafe_allow_html=True)
+        else:
+            st.caption("Analyze a photo to unlock Lookbook & Shopping.")
 
     # Ensure morning/evening palettes exist for UI tabs
     if style and (not style.get("morning_palette") or not style.get("evening_palette")):
@@ -1711,33 +1878,7 @@ def render_upload_screen():
             else:
                 st.caption("Evening palette will appear after analysis.")
 
-        # Clear, obvious next-step CTA (fixes: users can't find lookbook/shopping)
-        st.markdown("<div class='card' style='margin-top:14px;'>", unsafe_allow_html=True)
-        st.subheader("Next step")
-        st.caption("Open your regional lookbook and curated shopping experience (uses your palette + Gemini styling).")
-        b1, b2 = st.columns([1, 1])
-        with b1:
-            if st.button("👗 Open Lookbook & Shopping", use_container_width=True, key="btn_open_ls"):
-                st.session_state.view = "lookbook"
-                st.rerun()
-        with b2:
-            if st.button("🔁 Rebuild Lookbook", use_container_width=True, key="btn_rebuild_ls"):
-                st.session_state.pop("lookbook_data", None)
-                st.session_state.view = "lookbook"
-                st.rerun()
-        st.markdown("</div>", unsafe_allow_html=True)
-        c1, c2 = st.columns(2, gap="small")
-        with c1:
-            if st.button("👗 Open Lookbook & Shopping", type="primary", use_container_width=True):
-                news, celebs = get_country_context(country, category)
-                st.session_state["lookbook"] = gemini_lookbook_text(country, category, style, news, celebs)
-                navigate_to("lookbook")
-        with c2:
-            if st.button("🔁 Rebuild Lookbook", use_container_width=True):
-                news, celebs = get_country_context(country, category)
-                st.session_state["lookbook"] = gemini_lookbook_text(country, category, style, news, celebs)
-                st.success("Lookbook refreshed. Open it from the button on the left.")
-        st.markdown("</div>", unsafe_allow_html=True)
+
 
 
 
