@@ -1,7 +1,7 @@
 # app.py
 # LOOKBOOK AI — Streamlit + Gemini (Cloud-safe, JSON-safe, debuggable)
 global TEXT_MODEL
-global VISION_MODEL
+#global VISION_MODEL
 import os
 import re
 import io
@@ -485,7 +485,7 @@ def generate_multimodal_with_retry(prompt: str, img: Image.Image) -> Optional[st
 
             # If the model name is invalid (404), swap to fallback model and retry
             if "NotFound" in msg or "404" in msg or "is not found" in msg:
-                #global VISION_MODEL
+                global VISION_MODEL
                 VISION_MODEL = FALLBACK_VISION_MODEL
 
             if isinstance(e, exceptions.ResourceExhausted):
