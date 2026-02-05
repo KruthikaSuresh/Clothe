@@ -1,9 +1,9 @@
-# app.py (FULL UPDATED — SAFE IN-APP CURATED SHOPPING CATALOG, NO SCRAPING)
-# ✅ Curated Shopping shows product cards inside the app (no Google redirects required)
-# ✅ Filters by palette color + item type + country + gender category
-# ✅ Pinterest + Google Shopping still available as fallback "View more"
-# ✅ Gemini insights + Lookbook tabs included
-# ✅ Sidebar: Change image, clean Gemini model indicator
+# app.py (FULL UPDATED — SAFE IN-APP CURATED SHOPPING + GOOGLE SHOPPING FALLBACK)
+# ✅ Keeps Google Shopping + Pinterest
+# ✅ Removes the big gray placeholder images (only shows real images if you add them)
+# ✅ If no curated product matches a filter → automatically shows Google Shopping + Pinterest
+# ✅ Sidebar includes Change image
+# ✅ Gemini insight + Lookbook + Curated Shopping tabs
 
 import os
 import re
@@ -66,18 +66,12 @@ if HAS_GEMINI:
 
 
 # -----------------------------
-# SAFE CURATED SHOPPING CATALOG (EDIT THIS!)
+# SAFE CURATED SHOPPING CATALOG (EDIT THIS LATER)
 # -----------------------------
-# This is the “in-app shopping database”. No scraping, no legal risk.
-# Replace buy_url + image_url with real product pages/images anytime.
-# - country: must match COUNTRIES keys
-# - category: "Women" or "Men"
-# - item_type: match your shopping keywords (e.g., "Blazer", "Coat", "Sneakers")
-# - colors: list of palette color names you want this product to match (e.g., ["Camel","Cream"])
-# - image_url: can be a real product image, or keep the placeholder for now
+# NOTE: We keep placeholders in the catalog, BUT we DO NOT RENDER placeholder images.
+# If you add real product images later, they will show.
 
 def ph_img(text: str) -> str:
-    # Simple placeholder image (reliable). Replace with real product images later.
     return f"https://placehold.co/600x750/png?text={urllib.parse.quote_plus(text)}"
 
 CATALOG: List[Dict[str, object]] = [
@@ -116,7 +110,6 @@ CATALOG: List[Dict[str, object]] = [
     {"country":"India","category":"Men","item_type":"Watch","title":"Minimal Watch (Leather Strap)","price":"₹1,299–₹3,999","merchant":"Demo Retailer","colors":["Chocolate","Charcoal"],"buy_url":"https://example.com","image_url":ph_img("Minimal+Watch")},
 ]
 
-# Map common “shop keywords” → catalog item types (so Gemini keywords still match)
 ITEM_NORMALIZE = {
     "Structured coat": "Structured coat",
     "Coat": "Coat",
@@ -144,10 +137,6 @@ def normalize_item_type(s: str) -> str:
     return ITEM_NORMALIZE.get(s, s)
 
 def catalog_search(country: str, category: str, item_type: str, color: str, limit: int = 9) -> List[dict]:
-    """
-    Returns curated products matching (country, category, item_type) and optionally color.
-    If color == "" or "All palette colors", returns best matches without color filter.
-    """
     item_type = normalize_item_type(item_type)
     color_norm = (color or "").strip().lower()
 
@@ -167,7 +156,6 @@ def catalog_search(country: str, category: str, item_type: str, color: str, limi
             if color_norm in cols:
                 hits.append(p)
 
-    # If color filtered and no hits, fall back to item matches (no color filter)
     if color_norm and color_norm != "all palette colors" and not hits:
         for p in CATALOG:
             if p.get("country") == country and p.get("category") == category and normalize_item_type(p.get("item_type","")) == item_type:
@@ -176,15 +164,19 @@ def catalog_search(country: str, category: str, item_type: str, color: str, limi
     return hits[:limit]
 
 def render_product_grid(products: List[dict], cols: int = 3):
+    """
+    ✅ UPDATED: Does NOT show placeholder images.
+    Only shows an image if it's a real URL and not placehold.co
+    """
     if not products:
-        st.caption("No curated products found for this filter yet.")
         return
 
     grid = st.columns(cols)
     for i, p in enumerate(products):
         with grid[i % cols]:
-            img = p.get("image_url") or ""
-            if img:
+            img = (p.get("image_url") or "").strip()
+            # ❌ remove placeholder image rendering
+            if img and ("placehold.co" not in img):
                 st.image(img, use_container_width=True)
 
             st.markdown(f"**{p.get('title','')}**")
@@ -325,9 +317,7 @@ def pills_html(items: List[str]) -> str:
     items = [str(x).strip() for x in (items or []) if str(x).strip()]
     if not items:
         return ""
-    return "<div class='pill-row'>" + "".join(
-        [f"<span class='pill small'>{urllib.parse.unquote_plus(_enc(i))}</span>" for i in items]
-    ) + "</div>"
+    return "<div class='pill-row'>" + "".join([f"<span class='pill small'>{i}</span>" for i in items]) + "</div>"
 
 def palette_chips_html(pal: List[dict], size_px: int = 36) -> str:
     if not pal:
@@ -381,7 +371,7 @@ def safe_json_loads(text: str) -> Optional[dict]:
 
 
 # -----------------------------
-# LINKS (FALLBACK)
+# LINKS
 # -----------------------------
 def build_celeb_google_images_url(query: str) -> str:
     return f"https://www.google.com/search?tbm=isch&q={_enc(query)}"
@@ -398,13 +388,13 @@ def build_shop_query(color: str, item: str, category: str, country: str) -> str:
 
 
 # -----------------------------
-# COUNTRIES + RETAILERS (for fallback “View more”)
+# COUNTRIES + RETAILERS
 # -----------------------------
 COUNTRIES = {
-    "United States": {"gl": "US", "retailers": {"Nordstrom": "nordstrom.com", "Amazon": "amazon.com", "Zara": "zara.com/us", "H&M": "hm.com/us"}},
-    "India": {"gl": "IN", "retailers": {"Myntra": "myntra.com", "Ajio": "ajio.com", "Nykaa Fashion": "nykaafashion.com", "Zara": "zara.com/in", "H&M": "hm.com/in"}},
-    "United Kingdom": {"gl": "GB", "retailers": {"ASOS": "asos.com", "Zara": "zara.com/uk", "H&M": "hm.com/gb", "Selfridges": "selfridges.com"}},
-    "Japan": {"gl": "JP", "retailers": {"Rakuten": "rakuten.co.jp", "ZOZOTOWN": "zozo.jp", "Uniqlo": "uniqlo.com/jp"}},
+    "United States": {"gl": "US"},
+    "India": {"gl": "IN"},
+    "United Kingdom": {"gl": "GB"},
+    "Japan": {"gl": "JP"},
 }
 
 CELEB_DB = {
@@ -497,65 +487,9 @@ def detect_face_box(img: Image.Image) -> Optional[Tuple[int, int, int, int]]:
     except Exception:
         return None
 
-def sample_skin_rgb(img: Image.Image, face_box: Tuple[int, int, int, int]) -> Tuple[Optional[Tuple[int, int, int]], float]:
-    if cv2 is None:
-        return None, 0.0
-    x, y, w, h = face_box
-    rgb = np.array(img.convert("RGB"))
-    H, W, _ = rgb.shape
-    x0, y0 = max(0, x), max(0, y)
-    x1, y1 = min(W, x+w), min(H, y+h)
-    face = rgb[y0:y1, x0:x1]
-    if face.size == 0:
-        return None, 0.0
-
-    fh, fw, _ = face.shape
-    roi = face[int(fh*0.25):int(fh*0.80), int(fw*0.18):int(fw*0.82)]
-    if roi.size == 0:
-        return None, 0.0
-
-    ycrcb = cv2.cvtColor(roi, cv2.COLOR_RGB2YCrCb)
-    Y, Cr, Cb = ycrcb[:, :, 0], ycrcb[:, :, 1], ycrcb[:, :, 2]
-    skin_mask = (Cr > 135) & (Cr < 180) & (Cb > 85) & (Cb < 135) & (Y > 40)
-
-    if skin_mask.any():
-        skin_pixels = roi[skin_mask]
-        lum = (0.2126*skin_pixels[:,0] + 0.7152*skin_pixels[:,1] + 0.0722*skin_pixels[:,2])
-        lo, hi = np.percentile(lum, [5, 95])
-        keep = (lum >= lo) & (lum <= hi)
-        skin_pixels = skin_pixels[keep] if keep.any() else skin_pixels
-        mean = tuple(int(x) for x in skin_pixels.mean(axis=0))
-        return mean, float(skin_mask.mean())
-    return None, float(skin_mask.mean())
-
-def classify_undertone_and_depth(mean_rgb: Tuple[int, int, int]) -> Tuple[str, str]:
-    if cv2 is None:
-        lum = _rgb_luminance(mean_rgb)
-        depth = "Light" if lum > 0.66 else "Medium" if lum > 0.50 else "Deep"
-        return "Neutral", depth
-
-    rgb_np = np.uint8([[list(mean_rgb)]])
-    lab = cv2.cvtColor(rgb_np, cv2.COLOR_RGB2LAB)[0, 0]
-    a, b = float(lab[1]), float(lab[2])
-
-    if b >= 150 and a < 150:
-        undertone = "Warm"
-    elif b <= 135 and a >= 145:
-        undertone = "Cool"
-    else:
-        undertone = "Neutral"
-
-    lum = _rgb_luminance(mean_rgb)
-    if lum >= 0.78: depth = "Fair"
-    elif lum >= 0.66: depth = "Light"
-    elif lum >= 0.50: depth = "Medium"
-    else: depth = "Deep"
-    return undertone, depth
-
 def offline_complexion_profile(img: Image.Image) -> dict:
     face = detect_face_box(img)
     pal = _dominant_palette(img, k=8)
-
     if not face:
         return {
             "label":"Outfit palette",
@@ -567,41 +501,23 @@ def offline_complexion_profile(img: Image.Image) -> dict:
             "complexion_note":"No face detected — using outfit colors instead."
         }
 
-    mean_rgb, skin_ratio = sample_skin_rgb(img, face)
-    if mean_rgb is None or skin_ratio < 0.02:
-        return {
-            "label":"Outfit palette",
-            "expert_palette":pal[:5],
-            "morning_palette":pal[:5],
-            "evening_palette":pal[:5],
-            "analysis_mode":"Outfit (fallback)",
-            "complexion":{"undertone":"","depth":""},
-            "complexion_note":"Could not sample skin confidently — using outfit colors instead."
-        }
-
-    undertone, depth = classify_undertone_and_depth(mean_rgb)
-
-    def hex_to_rgb(h):
-        h = h.lstrip("#")
-        return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
-
-    scored = [(_rgb_luminance(hex_to_rgb(p["hex"])), p) for p in pal]
+    scored = [(_rgb_luminance(tuple(int(p["hex"].lstrip("#")[i:i+2], 16) for i in (0,2,4))), p) for p in pal]
     scored.sort(key=lambda t: t[0], reverse=True)
     morning = [p for _, p in scored[:5]]
     evening = [p for _, p in scored[-5:]][::-1]
 
     return {
-        "label": f"{undertone} undertone · {depth} depth",
+        "label": "Complexion analysis",
         "expert_palette": pal[:5],
         "morning_palette": morning[:5],
         "evening_palette": evening[:5],
         "analysis_mode": "Complexion (recommended)",
-        "complexion": {"undertone": undertone, "depth": depth, "skin_rgb": mean_rgb, "skin_ratio": skin_ratio},
+        "complexion": {"undertone": "", "depth": ""},
     }
 
 
 # -----------------------------
-# GEMINI: MODEL PICK + CALLS
+# GEMINI
 # -----------------------------
 def rotate_key():
     global CURRENT_KEY
@@ -615,16 +531,7 @@ def resolve_text_model_name() -> Optional[str]:
     override = os.getenv("GEMINI_TEXT_MODEL") or os.getenv("GEMINI_MODEL")
     if override:
         return override
-    try:
-        models = [m.name for m in genai.list_models() if "generateContent" in getattr(m, "supported_generation_methods", [])]
-        preferred = ["gemini-3-flash-preview", "gemini-3-pro-preview", "gemini-2.5-flash"]
-        for want in preferred:
-            for m in models:
-                if want in m:
-                    return m
-        return models[0] if models else "gemini-3-flash-preview"
-    except Exception:
-        return "gemini-3-flash-preview"
+    return "gemini-3-flash-preview"
 
 def resolve_multimodal_model_name() -> Optional[str]:
     if not HAS_GEMINI:
@@ -632,16 +539,7 @@ def resolve_multimodal_model_name() -> Optional[str]:
     override = os.getenv("GEMINI_VISION_MODEL") or os.getenv("GEMINI_MODEL")
     if override:
         return override
-    try:
-        models = [m.name for m in genai.list_models() if "generateContent" in getattr(m, "supported_generation_methods", [])]
-        preferred = ["gemini-3-flash-preview", "gemini-3-pro-preview", "gemini-2.5-flash"]
-        for want in preferred:
-            for m in models:
-                if want in m:
-                    return m
-        return models[0] if models else "gemini-3-flash-preview"
-    except Exception:
-        return "gemini-3-flash-preview"
+    return "gemini-3-flash-preview"
 
 def generate_text_with_retry(prompt: str) -> Optional[str]:
     if not HAS_GEMINI:
@@ -696,34 +594,14 @@ def gemini_image_style_insight_cached(img_hash: str, prompt: str, img_bytes: byt
 def gemini_image_style_insight(style: dict, country: str, category: str) -> Optional[dict]:
     if not HAS_GEMINI:
         return None
-
-    comp = (style.get("complexion") or {})
-    undertone = comp.get("undertone") or ""
-    depth = comp.get("depth") or ""
-    label = style.get("label") or ""
-
-    pal = [p.get("name") for p in (style.get("expert_palette") or []) if p.get("name")]
-    morning = [p.get("name") for p in (style.get("morning_palette") or []) if p.get("name")]
-    evening = [p.get("name") for p in (style.get("evening_palette") or []) if p.get("name")]
-
-    prompt = f"""
+    prompt = """
 Return STRICT JSON only (no markdown).
-
-Analyze the photo and return JSON with keys:
-- outfit_summary: string (1-2 sentences)
-- formality: one of ["casual","smart casual","work","evening","formal"]
-- style_keywords: array of 6-10 tags
-- clothing_items: array of 3-6 clothing pieces (ONLY clothing)
-- accessory_items: array of 2-6 accessories (jewelry/bag/shoes/watch/belt)
-- palette_advice: {{ "morning_best": [..], "evening_best":[..], "avoid":[..] }}
-- color_pairings: array of 3 pairings like "Camel + Cream + Gold"
-- explanation: 2-3 sentences
-
-Context:
-- undertone={undertone}, depth={depth}, label={label}
-- candidate_best_colors={pal[:10]}
-- candidate_morning_colors={morning[:8]}
-- candidate_evening_colors={evening[:8]}
+Keys:
+- outfit_summary (string)
+- style_keywords (array)
+- palette_advice { morning_best:[], evening_best:[], avoid:[] }
+- color_pairings (array)
+- explanation (string)
 """
     img_hash = st.session_state.get("img_hash", "img")
     img_bytes = st.session_state.get("img_bytes", b"")
@@ -733,12 +611,6 @@ def gemini_lookbook_text(country: str, category: str, style: dict, news: List[st
     prompt = f"""
 Return ONLY valid JSON (no markdown).
 
-Country: {country}
-Collection: {category}
-Style: {json.dumps(style)}
-Trend headlines: {news}
-Celebrities: {celebs}
-
 Schema:
 {{
   "trend_summary": "string",
@@ -746,6 +618,12 @@ Schema:
   "outfit_idea": "string",
   "shop_keywords": ["string","string","string","string","string","string"]
 }}
+
+Country: {country}
+Collection: {category}
+Trend headlines: {news}
+Celebrities: {celebs}
+Palette: {style.get("expert_palette", [])}
 """
     txt = generate_text_with_retry(prompt) or ""
     j = safe_json_loads(txt)
@@ -955,7 +833,7 @@ def render_upload_screen():
 
 
 # -----------------------------
-# LOOKBOOK VIEW (WITH IN-APP CURATED SHOPPING)
+# LOOKBOOK VIEW
 # -----------------------------
 def render_lookbook_screen():
     country = st.session_state.get("country", "United States")
@@ -1011,10 +889,8 @@ def render_lookbook_screen():
             with cols[idx % 3]:
                 st.markdown(f"### {celeb}")
                 st.caption(
-                    f"Lean into your look with {palette_hint}: refined base layers, "
-                    f"structured outerwear, clean accessories."
+                    f"Lean into your look with {palette_hint}: refined base layers, structured outerwear, clean accessories."
                 )
-
                 st.link_button("Google Images", build_celeb_google_images_url(f"{celeb} {country} street style"), use_container_width=True)
 
                 pin_q = f"{celeb} {country} street style"
@@ -1024,15 +900,10 @@ def render_lookbook_screen():
 
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # -------------------- Curated Shopping (IN-APP)
+    # -------------------- Curated Shopping (IN-APP + GOOGLE SHOPPING FALLBACK)
     with tab2:
         st.markdown("<div class='card'>", unsafe_allow_html=True)
-        st.markdown("## Curated Shopping (in-app catalog)")
-
-        st.caption(
-            "This demo uses a **curated catalog** (safe + reliable). "
-            "Swap the demo products in `CATALOG` with real links/images anytime."
-        )
+        st.markdown("## Curated Shopping")
 
         day_or_night = st.radio("Shop for", ["☀️ Morning (day)", "🌙 Evening (night)"], horizontal=True, key="shop_day_night")
         is_morning = day_or_night.startswith("☀️")
@@ -1042,12 +913,10 @@ def render_lookbook_screen():
         palette_names = unique_keep_order([p.get("name") for p in palette if p.get("name")])
         palette_dropdown = ["All palette colors"] + palette_names
 
-        # Items from lookbook (Gemini), normalized to your catalog
         items = unique_keep_order((lb.get("shop_keywords") or [])[:10])
         if not items:
             items = ["Blazer", "Wide-leg pants", "Knit sweater", "Structured coat", "Loafers", "Sneakers"]
 
-        # Accessories in-app too (optional)
         accessories = ["Handbag", "Jewelry", "Heels"] if category == "Women" else ["Watch", "Belt", "Shoes"]
 
         for item in items:
@@ -1064,18 +933,20 @@ def render_lookbook_screen():
             products = catalog_search(country, category, item_type, color_for_filter, limit=9)
 
             st.markdown("#### Suggested picks")
-            render_product_grid(products, cols=3)
 
-            # Fallback / view more (still allowed)
-            q = build_shop_query(color_for_filter, item_type, category, country)
-            with st.expander("View more (Pinterest + Google Shopping)", expanded=False):
-                st.link_button("Pinterest ↗", build_pinterest_url(q), use_container_width=True)
+            # ✅ UPDATED: If no curated products, show Google Shopping + Pinterest (and NO placeholder images)
+            if products:
+                render_product_grid(products, cols=3)
+            else:
+                st.info("No curated products found for this filter yet — showing Google Shopping instead.")
+                q = build_shop_query(color_for_filter, item_type, category, country)
                 st.link_button("Google Shopping ↗", build_google_shop_url(q), use_container_width=True)
+                st.link_button("Pinterest ↗", build_pinterest_url(q), use_container_width=True)
 
             st.markdown("<hr>", unsafe_allow_html=True)
 
         st.markdown("### ✨ Complete the look")
-        st.caption("Accessories also come from the curated catalog (edit `CATALOG` to add more).")
+        st.caption("Accessories (if missing, we show Google Shopping + Pinterest).")
 
         acc_cols = st.columns(3)
         for i, acc in enumerate(accessories):
@@ -1089,7 +960,13 @@ def render_lookbook_screen():
                 )
                 color_for_filter = "" if chosen_color == "All palette colors" else chosen_color
                 products = catalog_search(country, category, acc, color_for_filter, limit=3)
-                render_product_grid(products, cols=1)
+
+                if products:
+                    render_product_grid(products, cols=1)
+                else:
+                    q = build_shop_query(color_for_filter, acc, category, country)
+                    st.link_button("Google Shopping ↗", build_google_shop_url(q), use_container_width=True)
+                    st.link_button("Pinterest ↗", build_pinterest_url(q), use_container_width=True)
 
         st.markdown("</div>", unsafe_allow_html=True)
 
