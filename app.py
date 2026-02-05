@@ -622,7 +622,7 @@ Schema:
 # SIDEBAR IMAGE CONTROLS
 # -----------------------------
 def render_sidebar_image_controls():
-    st.markdown("### 🖼️ Image")
+    st.markdown("### Image")
     new_file = st.file_uploader("Change image", type=["jpg", "jpeg", "png", "webp"], key="sidebar_image_uploader")
     c1, c2 = st.columns(2)
     with c1:
@@ -745,7 +745,7 @@ def render_upload_screen():
         st.subheader("Your Upload")
         st.caption(st.session_state.get("img_name", "uploaded image"))
         st.image(img, use_container_width=True)
-        if st.button("✨ Analyze style", type="primary", use_container_width=True, key="analyze_left"):
+        if st.button("Analyze style", type="primary", use_container_width=True, key="analyze_left"):
             run_analysis()
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -764,12 +764,12 @@ def render_upload_screen():
             st.markdown("</div>", unsafe_allow_html=True)
 
     with col2:
-        if st.button("✨ Analyze style", type="primary", use_container_width=True, key="analyze_right"):
+        if st.button("Analyze style", type="primary", use_container_width=True, key="analyze_right"):
             run_analysis()
 
         insight = st.session_state.get("gemini_insight")
         st.markdown("<div class='card' style='margin-top:12px;'>", unsafe_allow_html=True)
-        with st.expander("✨ Gemini Insight (style + color reasoning)", expanded=True):
+        with st.expander("Gemini Insight (style + color reasoning)", expanded=True):
             if insight:
                 st.write("**Outfit summary**")
                 st.caption(insight.get("outfit_summary", ""))
@@ -801,7 +801,7 @@ def render_upload_screen():
         style = st.session_state.get("style")
         if style:
             st.markdown("<div class='card' style='margin-top:12px;'>", unsafe_allow_html=True)
-            st.subheader("🚀 Next step")
+            st.subheader("Next step")
             st.caption("Generate a regional lookbook + curated shopping (Gemini text).")
             if st.button("Open Lookbook", use_container_width=True, key="open_lookbook"):
                 news, celebs = get_country_context(country, category)
@@ -920,7 +920,7 @@ def render_lookbook_screen():
                 r2 = retailer_names[1] if len(retailer_names) > 1 else retailer_names[0]
                 st.link_button(f"{r2} ↗", build_retailer_site_search(retailers.get(r2, ""), q), use_container_width=True)
 
-            exp_label = "✨ Complete the look (shoes · bag · jewelry)" if category == "Women" else "✨ Complete the look (shoes · watch · belt)"
+            exp_label = "Complete the look (shoes · bag · jewelry)" if category == "Women" else "Complete the look (shoes · watch · belt)"
             with st.expander(exp_label, expanded=False):
                 st.link_button("Pinterest ↗", build_pinterest_url(q), use_container_width=True)
                 st.link_button("Google Shopping ↗", build_google_shop_url(q), use_container_width=True)
