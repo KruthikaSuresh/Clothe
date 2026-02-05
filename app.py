@@ -1,10 +1,19 @@
-# app.py (FULL UPDATED)
-# Restores your expected Lookbook UI:
-# ✅ Trend Intelligence tab + celebrity image cards
-# ✅ Curated Shopping (Gemini + palette) with Morning/Evening toggle + per-item palette dropdown + retailer buttons + “Complete the look”
-# ✅ Sidebar has Change Image controls (swap anytime)
-# ✅ Removes noisy debug — ONLY shows “Gemini model used”
-# ✅ Fixes Gemini model 404 by preferring gemini-3-*-preview (NOT gemini-3-flash)
+# app.py (FULL UPDATED — Celebrity IMAGES + Google Images + Pinterest + Curated Shopping UI)
+# ✅ Trend Intelligence tab:
+#    - Celebrity image cards (shows images)
+#    - Buttons: Google Images + Pinterest (kept)
+# ✅ Curated Shopping tab:
+#    - Morning/Evening toggle (entire experience uses that palette)
+#    - Per-item palette dropdown + 2 retailer buttons
+#    - “Complete the look” expander with Pinterest + Google Shopping + accessory links
+# ✅ Sidebar:
+#    - Preferences (Women/Men + Region)
+#    - Change image uploader (Use/Clear) always available once an image exists
+#    - Shows ONLY “Gemini model used” (no noisy debug)
+# ✅ Gemini model safety:
+#    - Avoids gemini-3-flash (often 404). Prefers gemini-3-*-preview.
+# ✅ Celebrity images:
+#    - Wikipedia thumbnail → Wikimedia thumbnail → Unsplash fallback (never blank)
 
 import os
 import re
@@ -20,6 +29,7 @@ import streamlit as st
 import feedparser
 import requests
 from PIL import Image
+from dotenv import load_dotenv
 
 # OpenCV optional (Cloud-safe)
 try:
@@ -28,14 +38,14 @@ except Exception:
     cv2 = None
 
 import numpy as np
-from dotenv import load_dotenv
 
+# Gemini (Google Generative AI)
 import google.generativeai as genai
 from google.api_core import exceptions
 
 
 # -----------------------------
-# CONFIGURATION
+# CONFIG
 # -----------------------------
 st.set_page_config(
     page_title="LOOKBOOK AI | Global Style Intelligence",
@@ -66,7 +76,7 @@ if HAS_GEMINI:
 
 
 # -----------------------------
-# UI THEME (clean + readable)
+# THEME / STYLES
 # -----------------------------
 STYLING = """
 <style>
@@ -159,14 +169,19 @@ st.markdown(STYLING, unsafe_allow_html=True)
 
 
 # -----------------------------
+# STATE / ROUTES
+# -----------------------------
+if "view" not in st.session_state:
+    st.session_state.view = "upload"
+
+def navigate_to(view_name: str):
+    st.session_state.view = view_name
+    st.rerun()
+
+
+# -----------------------------
 # UTILS
 # -----------------------------
-def _decode_plus(s: str) -> str:
-    try:
-        return urllib.parse.unquote(str(s)).replace("+", " + ").replace("  ", " ").strip()
-    except Exception:
-        return str(s)
-
 def _enc(s: str) -> str:
     return urllib.parse.quote_plus(str(s).strip())
 
@@ -233,15 +248,31 @@ def clear_analysis_outputs():
     ]:
         st.session_state.pop(k, None)
 
+def safe_json_loads(text: str) -> Optional[dict]:
+    if not text:
+        return None
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+    cleaned = re.sub(r"```(?:json)?", "", text, flags=re.IGNORECASE).strip("` \n\t")
+    start, end = cleaned.find("{"), cleaned.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        try:
+            return json.loads(cleaned[start:end+1])
+        except Exception:
+            return None
+    return None
+
 
 # -----------------------------
-# LINKS (Pinterest / Google / Retailers)
+# LINKS: GOOGLE / PINTEREST / SHOPPING
 # -----------------------------
-def build_pinterest_url(query: str) -> str:
-    return f"https://www.pinterest.com/search/pins/?q={_enc(query)}"
-
 def build_celeb_google_images_url(query: str) -> str:
     return f"https://www.google.com/search?tbm=isch&q={_enc(query)}"
+
+def build_pinterest_url(query: str) -> str:
+    return f"https://www.pinterest.com/search/pins/?q={_enc(query)}"
 
 def build_google_shop_url(query: str) -> str:
     return f"https://www.google.com/search?tbm=shop&q={_enc(query)}"
@@ -252,6 +283,9 @@ def _enc_retailer(domain_or_url: str) -> str:
     s = s.split("/")[0]
     return s
 
+def build_retailer_site_search(domain: str, query: str) -> str:
+    return f"https://www.google.com/search?q=site:{_enc(_enc_retailer(domain))}+{_enc(query)}"
+
 def build_shop_query(color: str, item: str, category: str, country: str) -> str:
     color = (color or "").strip()
     item = (item or "").strip()
@@ -260,16 +294,9 @@ def build_shop_query(color: str, item: str, category: str, country: str) -> str:
     parts = [p for p in [color, item, category, country] if p]
     return " ".join(parts)
 
-def build_retailer_site_search(domain: str, query: str) -> str:
-    return f"https://www.google.com/search?q=site:{_enc(_enc_retailer(domain))}+{_enc(query)}"
-
-def build_pinterest(color: str, item: str, category: str, country: str) -> str:
-    q = build_shop_query(color, item, category, country)
-    return build_pinterest_url(q)
-
 
 # -----------------------------
-# COUNTRY + RETAILER MAP
+# COUNTRY + RETAILERS (EDIT/ADD AS NEEDED)
 # -----------------------------
 COUNTRIES = {
     "United States": {
@@ -312,11 +339,11 @@ COUNTRIES = {
 
 
 # -----------------------------
-# CELEBRITIES
+# CELEBS
 # -----------------------------
 CELEB_DB = {
     "United States": {
-        "Women": ["Zendaya", "Hailey Bieber", "Bella Hadid"],
+        "Women": ["Zendaya", "Hailey Bieber", "Rihanna"],
         "Men": ["Ryan Gosling", "Harry Styles", "Donald Glover"],
     },
     "India": {
@@ -335,6 +362,12 @@ CELEB_DB = {
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def get_celebrity_image(name: str) -> Optional[str]:
+    """
+    1) Wikipedia pageimages thumbnail
+    2) Wikimedia Commons pageimage thumbnail
+    3) Fallback: Unsplash source (so UI is never empty)
+    """
+    # Wikipedia
     try:
         url = "https://en.wikipedia.org/w/api.php"
         params = {
@@ -342,7 +375,7 @@ def get_celebrity_image(name: str) -> Optional[str]:
             "format": "json",
             "prop": "pageimages",
             "piprop": "thumbnail",
-            "pithumbsize": 700,
+            "pithumbsize": 900,
             "titles": name,
             "redirects": 1,
         }
@@ -355,8 +388,59 @@ def get_celebrity_image(name: str) -> Optional[str]:
             if "source" in thumb:
                 return thumb["source"]
     except Exception:
-        return None
-    return None
+        pass
+
+    # Wikimedia Commons
+    try:
+        url = "https://commons.wikimedia.org/w/api.php"
+        params = {
+            "action": "query",
+            "format": "json",
+            "prop": "pageimages",
+            "piprop": "thumbnail",
+            "pithumbsize": 900,
+            "titles": name,
+            "redirects": 1,
+        }
+        r = requests.get(url, params=params, timeout=8)
+        r.raise_for_status()
+        data = r.json()
+        pages = data.get("query", {}).get("pages", {})
+        for _, page in pages.items():
+            thumb = page.get("thumbnail", {})
+            if "source" in thumb:
+                return thumb["source"]
+    except Exception:
+        pass
+
+    # Fallback placeholder
+    return f"https://source.unsplash.com/featured/800x900?portrait,{_enc(name)}"
+
+
+# -----------------------------
+# NEWS / CONTEXT
+# -----------------------------
+@st.cache_data(ttl=3600)
+def get_country_context(country: str, gender: str):
+    cfg = COUNTRIES.get(country, COUNTRIES["United States"])
+    gl = cfg["gl"]
+    rss_url = (
+        f"https://news.google.com/rss/search?q={_enc('fashion street style trends')}"
+        f"&hl=en&gl={gl}&ceid={gl}:en"
+    )
+
+    headlines = []
+    try:
+        feed = feedparser.parse(rss_url)
+        headlines = list(dict.fromkeys([e.title for e in feed.entries]))[:7]
+    except Exception:
+        headlines = []
+
+    if not headlines:
+        headlines = ["Minimal layering", "Vintage revival", "Tailored silhouettes"]
+
+    celebs = (CELEB_DB.get(country, {}).get(gender) or CELEB_DB["United States"][gender])[:6]
+    return headlines, celebs
 
 
 # -----------------------------
@@ -400,7 +484,7 @@ def _rgb_luminance(rgb: Tuple[int, int, int]) -> float:
     r, g, b = [x/255.0 for x in rgb]
     return 0.2126*r + 0.7152*g + 0.0722*b
 
-def _dominant_palette(img: Image.Image, k: int = 5) -> List[Dict[str, str]]:
+def _dominant_palette(img: Image.Image, k: int = 8) -> List[Dict[str, str]]:
     im = img.copy()
     im.thumbnail((420, 420))
     q = im.convert("P", palette=Image.Palette.ADAPTIVE, colors=12)
@@ -511,7 +595,7 @@ def classify_undertone_and_depth(mean_rgb: Tuple[int, int, int]) -> Tuple[str, s
 
     return undertone, depth
 
-def offline_complexion_profile(img: Image.Image, category: str, seed: str) -> dict:
+def offline_complexion_profile(img: Image.Image) -> dict:
     face = detect_face_box(img)
     pal = _dominant_palette(img, k=8)
 
@@ -561,73 +645,61 @@ def offline_complexion_profile(img: Image.Image, category: str, seed: str) -> di
 
 
 # -----------------------------
-# GEMINI (MODEL RESOLUTION + CALLS)
+# GEMINI: MODEL PICK + CALLS
 # -----------------------------
-def resolve_text_model_name() -> Optional[str]:
-    """Pick a text-capable model. Prefer Gemini 3 preview models (avoid gemini-3-flash 404)."""
-    if not HAS_GEMINI:
-        return None
-    override = os.getenv("GEMINI_TEXT_MODEL") or os.getenv("GEMINI_MODEL")
-    if override:
-        return override
-
-    try:
-        models = [
-            m.name
-            for m in genai.list_models()
-            if "generateContent" in getattr(m, "supported_generation_methods", [])
-        ]
-        models = [m for m in models if "-exp" not in m and "experimental" not in m.lower()]
-
-        preferred = ["gemini-3-flash-preview", "gemini-3-pro-preview", "gemini-2.5-flash", "gemini-2.5-flash-lite"]
-        for want in preferred:
-            for m in models:
-                if want in m:
-                    return m
-        return models[0] if models else None
-    except Exception:
-        return "gemini-3-flash-preview"
-
-def resolve_multimodal_model_name() -> Optional[str]:
-    """Pick an image+text model. Prefer Gemini 3 preview models (avoid gemini-3-flash 404)."""
-    if not HAS_GEMINI:
-        return None
-    override = os.getenv("GEMINI_VISION_MODEL") or os.getenv("GEMINI_MODEL")
-    if override:
-        return override
-
-    try:
-        models = [
-            m.name
-            for m in genai.list_models()
-            if "generateContent" in getattr(m, "supported_generation_methods", [])
-        ]
-        models = [m for m in models if "-exp" not in m and "experimental" not in m.lower()]
-
-        preferred = ["gemini-3-flash-preview", "gemini-3-pro-preview", "gemini-2.5-flash", "gemini-1.5"]
-        for want in preferred:
-            for m in models:
-                if want in m:
-                    return m
-        return models[0] if models else None
-    except Exception:
-        return "gemini-3-flash-preview"
-
 def rotate_key():
     global CURRENT_KEY
     if KEY_CYCLE and len(API_KEYS) > 1:
         CURRENT_KEY = next(KEY_CYCLE)
         genai.configure(api_key=CURRENT_KEY)
 
-def generate_text_with_retry(prompt: str) -> Optional[str]:
-    global CURRENT_KEY
+def resolve_text_model_name() -> Optional[str]:
     if not HAS_GEMINI:
         return None
+    override = os.getenv("GEMINI_TEXT_MODEL") or os.getenv("GEMINI_MODEL")
+    if override:
+        return override
+    # Prefer Gemini 3 preview models to avoid 404
+    try:
+        models = [
+            m.name
+            for m in genai.list_models()
+            if "generateContent" in getattr(m, "supported_generation_methods", [])
+        ]
+        preferred = ["gemini-3-flash-preview", "gemini-3-pro-preview", "gemini-2.5-flash"]
+        for want in preferred:
+            for m in models:
+                if want in m:
+                    return m
+        return models[0] if models else "gemini-3-flash-preview"
+    except Exception:
+        return "gemini-3-flash-preview"
 
-    model_name = resolve_text_model_name()
-    if not model_name:
+def resolve_multimodal_model_name() -> Optional[str]:
+    if not HAS_GEMINI:
         return None
+    override = os.getenv("GEMINI_VISION_MODEL") or os.getenv("GEMINI_MODEL")
+    if override:
+        return override
+    try:
+        models = [
+            m.name
+            for m in genai.list_models()
+            if "generateContent" in getattr(m, "supported_generation_methods", [])
+        ]
+        preferred = ["gemini-3-flash-preview", "gemini-3-pro-preview", "gemini-2.5-flash"]
+        for want in preferred:
+            for m in models:
+                if want in m:
+                    return m
+        return models[0] if models else "gemini-3-flash-preview"
+    except Exception:
+        return "gemini-3-flash-preview"
 
+def generate_text_with_retry(prompt: str) -> Optional[str]:
+    if not HAS_GEMINI:
+        return None
+    model_name = resolve_text_model_name()
     last_err = None
     for _ in range(max(2, len(API_KEYS) * 2)):
         try:
@@ -642,18 +714,13 @@ def generate_text_with_retry(prompt: str) -> Optional[str]:
         except Exception as e:
             last_err = e
             time.sleep(0.25)
-
     st.session_state["gemini_last_error"] = f"{type(last_err).__name__}: {last_err}" if last_err else "Unknown error"
     return None
 
 def generate_multimodal_with_retry(prompt: str, img: Image.Image) -> Optional[str]:
     if not HAS_GEMINI:
         return None
-
     model_name = resolve_multimodal_model_name()
-    if not model_name:
-        return None
-
     last_err = None
     for _ in range(max(2, len(API_KEYS) * 2)):
         try:
@@ -671,25 +738,9 @@ def generate_multimodal_with_retry(prompt: str, img: Image.Image) -> Optional[st
         except Exception as e:
             last_err = e
             time.sleep(0.25)
-
     st.session_state["gemini_last_error"] = f"{type(last_err).__name__}: {last_err}" if last_err else "Unknown error"
     return None
 
-def safe_json_loads(text: str) -> Optional[dict]:
-    if not text:
-        return None
-    try:
-        return json.loads(text)
-    except Exception:
-        pass
-    cleaned = re.sub(r"```(?:json)?", "", text, flags=re.IGNORECASE).strip("` \n\t")
-    start, end = cleaned.find("{"), cleaned.rfind("}")
-    if start != -1 and end != -1 and end > start:
-        try:
-            return json.loads(cleaned[start:end+1])
-        except Exception:
-            return None
-    return None
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def gemini_image_style_insight_cached(img_hash: str, prompt: str, img_bytes: bytes) -> Optional[dict]:
@@ -760,80 +811,40 @@ Schema:
     if not j:
         return {
             "trend_summary": f"Across {country}, the mood is refined and wearable: {', '.join(news[:3])}.",
-            "style_translation": ["Anchor looks in your palette.", "Prioritize structure.", "Keep accessories minimal; let texture do the work."],
+            "style_translation": ["Anchor looks in your palette.", "Prioritize structure (clean shoulders, straight hems).", "Keep accessories minimal; let texture do the work."],
             "outfit_idea": "A modern minimal edit: crisp top + tailored bottom + a sleek layer in your palette.",
-            "shop_keywords": ["blazer", "wide-leg pants", "heels", "loafers", "structured coat", "knit sweater"],
+            "shop_keywords": ["Blazer", "Wide-leg pants", "Heels", "Loafers", "Structured coat", "Knit sweater"],
             "celeb_styling": [{"name": c, "wearing": "Match your palette with clean tailoring + refined textures."} for c in celebs[:5]],
         }
     return j
 
 
 # -----------------------------
-# NEWS + CELEB CONTEXT
-# -----------------------------
-@st.cache_data(ttl=3600)
-def get_country_context(country: str, gender: str):
-    cfg = COUNTRIES.get(country, COUNTRIES["United States"])
-    gl = cfg["gl"]
-    rss_url = (
-        f"https://news.google.com/rss/search?q={_enc('fashion street style trends')}"
-        f"&hl=en&gl={gl}&ceid={gl}:en"
-    )
-
-    headlines = []
-    try:
-        feed = feedparser.parse(rss_url)
-        headlines = list(dict.fromkeys([e.title for e in feed.entries]))[:7]
-    except Exception:
-        headlines = []
-
-    if not headlines:
-        headlines = ["Minimal layering", "Vintage revival", "Tailored silhouettes"]
-
-    celebs = (CELEB_DB.get(country, {}).get(gender) or CELEB_DB["United States"][gender])[:6]
-    return headlines, celebs
-
-
-# -----------------------------
-# SIDEBAR: Image controls (swap anytime)
+# SIDEBAR IMAGE CONTROLS
 # -----------------------------
 def render_sidebar_image_controls():
-    st.markdown("### 📸 Image")
-    uploaded = st.file_uploader(
+    st.markdown("### 🖼️ Image")
+    new_file = st.file_uploader(
         "Change image",
-        type=["jpg", "png", "jpeg", "webp"],
-        key="uploader_sidebar",
-        label_visibility="visible",
+        type=["jpg", "jpeg", "png", "webp"],
+        key="sidebar_image_uploader",
     )
+    c1, c2 = st.columns(2)
+    with c1:
+        use_new = st.button("✅ Use", use_container_width=True, disabled=(new_file is None), key="sb_use_img")
+    with c2:
+        clear_img = st.button("🗑️ Clear", use_container_width=True, key="sb_clear_img")
 
-    colA, colB = st.columns(2)
-    with colA:
-        use = st.button("➕ Use", use_container_width=True, disabled=(uploaded is None), key="btn_use_sidebar")
-    with colB:
-        clear = st.button("🗑️ Clear", use_container_width=True, key="btn_clear_sidebar")
-
-    if clear:
+    if clear_img:
         for k in ["img_bytes", "img_name", "img_hash"]:
             st.session_state.pop(k, None)
         clear_analysis_outputs()
         st.rerun()
 
-    if use and uploaded is not None:
-        save_uploaded_file_to_state(uploaded)
+    if use_new and new_file is not None:
+        save_uploaded_file_to_state(new_file)
         clear_analysis_outputs()
         st.rerun()
-
-
-# -----------------------------
-# ROUTING
-# -----------------------------
-if "view" not in st.session_state:
-    st.session_state.view = "upload"
-
-
-def navigate_to(view_name: str):
-    st.session_state.view = view_name
-    st.rerun()
 
 
 # -----------------------------
@@ -854,9 +865,9 @@ def render_center_upload_panel():
 
     c1, c2 = st.columns([1, 1])
     with c1:
-        use = st.button("✅ Use this upload", use_container_width=True, disabled=(uploaded is None), key="btn_use_center")
+        use = st.button("✅ Use this upload", use_container_width=True, disabled=(uploaded is None), key="center_use")
     with c2:
-        clear = st.button("🗑️ Clear", use_container_width=True, key="btn_clear_center")
+        clear = st.button("🗑️ Clear", use_container_width=True, key="center_clear")
 
     if clear:
         for k in ["img_bytes", "img_name", "img_hash"]:
@@ -872,12 +883,12 @@ def render_center_upload_panel():
 
 def render_upload_screen():
     st.markdown(
-        '''
+        """
         <div class="hero">
             <h1>LOOKBOOK AI</h1>
             <p>Global Style Intelligence · Personalized Curation</p>
         </div>
-        ''',
+        """,
         unsafe_allow_html=True,
     )
 
@@ -885,37 +896,19 @@ def render_upload_screen():
     has_img = img is not None
 
     with st.sidebar:
-        st.markdown("### ⚙️ Preferences")
-
-        category = st.radio(
-            "Collection",
-            ["Women", "Men"],
-            index=(0 if st.session_state.get("category", "Women") == "Women" else 1),
-            horizontal=True,
-            key="sb_category_radio",
-        )
-        country = st.selectbox(
-            "Region",
-            list(COUNTRIES.keys()),
-            index=list(COUNTRIES.keys()).index(st.session_state.get("country", "United States")),
-            key="sb_country",
-        )
-
+        st.markdown("### Preferences")
+        category = st.radio("Collection", ["Women", "Men"], horizontal=True, key="sb_category")
+        country = st.selectbox("Region", list(COUNTRIES.keys()), key="sb_country")
         st.session_state["category"] = category
         st.session_state["country"] = country
-        st.session_state["analysis_mode_ui"] = "Complexion (recommended)"
-        st.session_state["analysis_mode_committed"] = "Complexion (recommended)"
 
         st.markdown("---")
         if has_img:
             render_sidebar_image_controls()
         else:
-            st.markdown("### 📸 Image")
-            st.caption("Upload in the center panel. After upload, controls appear here to swap anytime.")
+            st.caption("Upload an image to enable Change Image controls here.")
 
         st.markdown("---")
-
-        # Show only model used (clean UI)
         used_v = st.session_state.get("gemini_vision_model_used")
         used_t = st.session_state.get("gemini_text_model_used")
         if HAS_GEMINI and (used_v or used_t):
@@ -925,23 +918,15 @@ def render_upload_screen():
         else:
             st.warning("Gemini: not connected (missing API key)")
 
-        st.markdown("---")
-        if st.button("↻ Reset app", use_container_width=True, key="btn_reset_sidebar"):
-            st.session_state.clear()
+        if st.button("🧹 Clear cache", use_container_width=True, key="sb_clear_cache"):
+            st.cache_data.clear()
+            clear_analysis_outputs()
             st.rerun()
 
-        st.caption(
-            "ℹ️ Palette is analyzed locally. If a Gemini API key is set, Gemini also analyzes your photo (vision) and generates the regional lookbook + curated shopping."
-        )
-
-    # If no image yet, just show center upload
     if not has_img:
         render_center_upload_panel()
         return
 
-    # Top status bar
-    category = st.session_state.get("category", "Women")
-    country = st.session_state.get("country", "United States")
     st.markdown(
         f"<div class='card' style='padding:14px 16px; display:flex; justify-content:space-between; align-items:center;'>"
         f"<div><b>Selected</b> · {category} · {country}</div>"
@@ -954,17 +939,18 @@ def render_upload_screen():
     col1, col2 = st.columns([1.08, 0.92], gap="large")
 
     def run_analysis():
-        seed = st.session_state.get("img_hash", "seed")
-        st.session_state["style"] = offline_complexion_profile(img, category, seed)
+        st.session_state["style"] = offline_complexion_profile(img)
 
-        clear_analysis_outputs()  # clears old gemini outputs too, but keep style
-        st.session_state["style"] = offline_complexion_profile(img, category, seed)
+        # clear old gemini outputs but keep style
+        for k in ["lookbook", "gemini_insight", "gemini_last_error", "gemini_text_model_used", "gemini_vision_model_used"]:
+            st.session_state.pop(k, None)
 
         if HAS_GEMINI:
             with st.spinner("Gemini is analyzing your photo…"):
                 insight = gemini_image_style_insight(st.session_state["style"], country, category)
             if insight:
                 st.session_state["gemini_insight"] = insight
+
         st.rerun()
 
     with col1:
@@ -972,7 +958,7 @@ def render_upload_screen():
         st.subheader("Your Upload")
         st.caption(st.session_state.get("img_name", "uploaded image"))
         st.image(img, use_container_width=True)
-        if st.button("✨ Analyze style", type="primary", use_container_width=True, key="btn_analyze_left"):
+        if st.button("✨ Analyze style", type="primary", use_container_width=True, key="analyze_left"):
             run_analysis()
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -981,18 +967,19 @@ def render_upload_screen():
             st.markdown("<div class='card' style='margin-top:12px;'>", unsafe_allow_html=True)
             st.subheader("Your palette")
             st.markdown(palette_chips_html(style.get("expert_palette", [])), unsafe_allow_html=True)
+
             st.markdown("<hr>", unsafe_allow_html=True)
             st.write("Morning palette")
             st.markdown(palette_chips_html(style.get("morning_palette", []), size_px=30), unsafe_allow_html=True)
             st.write("Evening palette")
             st.markdown(palette_chips_html(style.get("evening_palette", []), size_px=30), unsafe_allow_html=True)
-            note = style.get("complexion_note")
-            if note:
-                st.caption(note)
+
+            if style.get("complexion_note"):
+                st.caption(style["complexion_note"])
             st.markdown("</div>", unsafe_allow_html=True)
 
     with col2:
-        if st.button("✨ Analyze style", type="primary", use_container_width=True, key="btn_analyze_right"):
+        if st.button("✨ Analyze style", type="primary", use_container_width=True, key="analyze_right"):
             run_analysis()
 
         insight = st.session_state.get("gemini_insight")
@@ -1030,28 +1017,31 @@ def render_upload_screen():
                 st.caption("Click **Analyze style** to generate Gemini insights.")
         st.markdown("</div>", unsafe_allow_html=True)
 
-        if st.session_state.get("style"):
+        style = st.session_state.get("style")
+        if style:
             st.markdown("<div class='card' style='margin-top:12px;'>", unsafe_allow_html=True)
             st.subheader("🚀 Next step")
-            st.caption("Generate a regional lookbook (Gemini text) + curated shopping.")
-            if st.button("Open Lookbook", use_container_width=True, key="btn_open_lookbook"):
+            st.caption("Generate a regional lookbook + curated shopping (Gemini text).")
+
+            if st.button("Open Lookbook", use_container_width=True, key="open_lookbook"):
                 news, celebs = get_country_context(country, category)
                 with st.spinner("Building your regional lookbook (Gemini 3)…"):
-                    lb = gemini_lookbook_text(country, category, st.session_state["style"], news, celebs)
+                    lb = gemini_lookbook_text(country, category, style, news, celebs)
                 st.session_state["lookbook"] = lb
                 st.session_state["celebs_for_lookbook"] = celebs
                 navigate_to("lookbook")
+
             st.markdown("</div>", unsafe_allow_html=True)
 
 
 # -----------------------------
-# LOOKBOOK SCREEN (THIS IS THE PAGE YOU EXPECT)
+# LOOKBOOK SCREEN (EXPECTED PAGE)
 # -----------------------------
 def render_lookbook_screen():
     country = st.session_state.get("country", "United States")
     category = st.session_state.get("category", "Women")
-    lb = st.session_state.get("lookbook", {}) or {}
     style = st.session_state.get("style", {}) or {}
+    lb = st.session_state.get("lookbook", {}) or {}
 
     if not lb:
         news, celebs = get_country_context(country, category)
@@ -1062,24 +1052,22 @@ def render_lookbook_screen():
 
     celebs = st.session_state.get("celebs_for_lookbook") or (CELEB_DB.get(country, {}).get(category) or [])
 
-    top = st.columns([1, 2, 1])
-    with top[0]:
-        if st.button("← Back", key="btn_back_lookbook"):
+    ctop = st.columns([1, 2, 1])
+    with ctop[0]:
+        if st.button("← Back", key="back_to_upload"):
             navigate_to("upload")
 
-    st.markdown(f"<h2 style='text-align:center; margin-top:8px;'>THE {country.upper()} EDIT</h2>", unsafe_allow_html=True)
+    st.markdown(f"<h2 style='text-align:left; margin-top:6px;'>THE {country.upper()} EDIT</h2>", unsafe_allow_html=True)
 
-    # Palette banner
     if style.get("expert_palette"):
         st.markdown("<div class='card'>", unsafe_allow_html=True)
         st.write("**Your palette**")
         st.markdown(palette_chips_html(style.get("expert_palette", []), size_px=30), unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # Tabs like your screenshots
     tab1, tab2 = st.tabs(["Trend Intelligence", "Curated Shopping"])
 
-    # ------------------ Trend Intelligence
+    # -------------------- Trend Intelligence
     with tab1:
         st.markdown("<div class='card'>", unsafe_allow_html=True)
         st.info(lb.get("trend_summary", ""))
@@ -1094,25 +1082,51 @@ def render_lookbook_screen():
         st.write(lb.get("outfit_idea", ""))
         st.markdown("</div>", unsafe_allow_html=True)
 
-        # Celebrity cards (images + palette matched)
+        # ✅ Celebrity section: IMAGE + Google Images + Pinterest
         st.markdown("<div class='card' style='margin-top:12px;'>", unsafe_allow_html=True)
         st.subheader(f"{category} icons in {country} (matched to your palette + style)")
 
-        cols = st.columns(3)
         palette_names = [p.get("name") for p in (style.get("expert_palette") or []) if p.get("name")] or []
         palette_hint = ", ".join(palette_names[:5]) if palette_names else "your palette"
 
+        pin_color = st.selectbox(
+            "Pinterest color filter",
+            ["All palette colors"] + palette_names,
+            key="celeb_pin_color_filter",
+        )
+
+        cols = st.columns(3)
         for idx, celeb in enumerate(celebs[:9]):
             with cols[idx % 3]:
                 img_url = get_celebrity_image(celeb)
                 if img_url:
                     st.image(img_url, use_container_width=True)
+
                 st.markdown(f"### {celeb}")
-                st.caption(f"Lean into your look with {palette_hint}: refined base layers, structured outerwear, clean accessories.")
-                st.link_button("Google Images", build_celeb_google_images_url(f"{celeb} {country} street style"), use_container_width=True)
+                st.caption(
+                    f"Lean into your look with {palette_hint}: refined base layers, "
+                    f"structured outerwear, clean accessories."
+                )
+
+                st.link_button(
+                    "Google Images",
+                    build_celeb_google_images_url(f"{celeb} {country} street style"),
+                    use_container_width=True,
+                )
+
+                pin_q = f"{celeb} {country} street style"
+                if pin_color and pin_color != "All palette colors":
+                    pin_q = f"{celeb} {pin_color} outfit"
+
+                st.link_button(
+                    "Pinterest",
+                    build_pinterest_url(pin_q),
+                    use_container_width=True,
+                )
+
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # ------------------ Curated Shopping (Gemini + palette)
+    # -------------------- Curated Shopping (Gemini + palette)
     with tab2:
         st.markdown("<div class='card'>", unsafe_allow_html=True)
         st.markdown("## Curated Shopping (Gemini + palette)")
@@ -1128,19 +1142,16 @@ def render_lookbook_screen():
 
         palette = style.get("morning_palette") if is_morning else style.get("evening_palette")
         palette = palette or style.get("expert_palette") or []
-        palette_names = [p.get("name") for p in palette if p.get("name")]
-        palette_names = unique_keep_order(palette_names)
+        palette_names = unique_keep_order([p.get("name") for p in palette if p.get("name")])
         palette_dropdown = ["All palette colors"] + palette_names
 
         retailers = (COUNTRIES.get(country, {}).get("retailers") or COUNTRIES["United States"]["retailers"])
         retailer_names = list(retailers.keys())
 
-        # Items to shop (from Gemini lookbook + fallback)
-        items = unique_keep_order((lb.get("shop_keywords") or [])[:8])
+        items = unique_keep_order((lb.get("shop_keywords") or [])[:10])
         if not items:
-            items = ["Blazer", "Wide-leg pants", "Heels", "Shoes", "Coat", "Knitwear"]
+            items = ["Blazer", "Wide-leg pants", "Heels", "Loafers", "Structured coat", "Knit sweater"]
 
-        # Simple accessory recos (keeps your expander behavior)
         accessories = ["shoes", "bag", "jewelry"] if category == "Women" else ["shoes", "watch", "belt"]
 
         for item in items:
@@ -1154,20 +1165,22 @@ def render_lookbook_screen():
                     key=f"shop_color_{item}_{'m' if is_morning else 'e'}",
                     label_visibility="collapsed",
                 )
+
+            color_for_links = "" if picked == "All palette colors" else picked
+            q = build_shop_query(color_for_links, item, category, country)
+
             with c2:
                 r1 = retailer_names[0] if retailer_names else "Retailer 1"
-                q1 = build_shop_query("" if picked == "All palette colors" else picked, item, category, country)
-                st.link_button(f"{r1} ↗", build_retailer_site_search(retailers.get(r1, ""), q1), use_container_width=True)
+                st.link_button(f"{r1} ↗", build_retailer_site_search(retailers.get(r1, ""), q), use_container_width=True)
+
             with c3:
                 r2 = retailer_names[1] if len(retailer_names) > 1 else retailer_names[0]
-                q2 = build_shop_query("" if picked == "All palette colors" else picked, item, category, country)
-                st.link_button(f"{r2} ↗", build_retailer_site_search(retailers.get(r2, ""), q2), use_container_width=True)
+                st.link_button(f"{r2} ↗", build_retailer_site_search(retailers.get(r2, ""), q), use_container_width=True)
 
-            with st.expander("✨ Complete the look (shoes · bag · jewelry)" if category == "Women" else "✨ Complete the look (shoes · watch · belt)", expanded=False):
-                # Pinterest + Google Shopping links
-                color_for_links = "" if picked == "All palette colors" else picked
-                st.link_button("Pinterest ↗", build_pinterest(color_for_links, item, category, country), use_container_width=True)
-                st.link_button("Google Shopping ↗", build_google_shop_url(build_shop_query(color_for_links, item, category, country)), use_container_width=True)
+            exp_label = "✨ Complete the look (shoes · bag · jewelry)" if category == "Women" else "✨ Complete the look (shoes · watch · belt)"
+            with st.expander(exp_label, expanded=False):
+                st.link_button("Pinterest ↗", build_pinterest_url(q), use_container_width=True)
+                st.link_button("Google Shopping ↗", build_google_shop_url(q), use_container_width=True)
 
                 st.markdown("**Accessories**")
                 acc_cols = st.columns(3)
