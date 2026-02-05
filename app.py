@@ -1,9 +1,9 @@
-# app.py (FULL UPDATED — Celebrity IMAGES REMOVED, Google Images + Pinterest KEPT)
-# ✅ Trend Intelligence: celeb names + text + Google Images + Pinterest buttons (NO images)
-# ✅ Curated Shopping (Gemini + palette)
-# ✅ Sidebar: change image available, clean “Gemini model used”
-# ✅ Gemini: prefers gemini-3-*-preview (avoids 404 model issues)
-# ✅ Local palette analysis works without Gemini too
+# app.py (FULL UPDATED — SAFE IN-APP CURATED SHOPPING CATALOG, NO SCRAPING)
+# ✅ Curated Shopping shows product cards inside the app (no Google redirects required)
+# ✅ Filters by palette color + item type + country + gender category
+# ✅ Pinterest + Google Shopping still available as fallback "View more"
+# ✅ Gemini insights + Lookbook tabs included
+# ✅ Sidebar: Change image, clean Gemini model indicator
 
 import os
 import re
@@ -29,6 +29,7 @@ except Exception:
 
 import numpy as np
 
+# Gemini (Google Generative AI)
 import google.generativeai as genai
 from google.api_core import exceptions
 
@@ -65,7 +66,139 @@ if HAS_GEMINI:
 
 
 # -----------------------------
-# THEME / STYLES
+# SAFE CURATED SHOPPING CATALOG (EDIT THIS!)
+# -----------------------------
+# This is the “in-app shopping database”. No scraping, no legal risk.
+# Replace buy_url + image_url with real product pages/images anytime.
+# - country: must match COUNTRIES keys
+# - category: "Women" or "Men"
+# - item_type: match your shopping keywords (e.g., "Blazer", "Coat", "Sneakers")
+# - colors: list of palette color names you want this product to match (e.g., ["Camel","Cream"])
+# - image_url: can be a real product image, or keep the placeholder for now
+
+def ph_img(text: str) -> str:
+    # Simple placeholder image (reliable). Replace with real product images later.
+    return f"https://placehold.co/600x750/png?text={urllib.parse.quote_plus(text)}"
+
+CATALOG: List[Dict[str, object]] = [
+    # ---------- UNITED STATES / WOMEN ----------
+    {"country":"United States","category":"Women","item_type":"Blazer","title":"Camel Tailored Blazer","price":"$80–$160","merchant":"Demo Retailer","colors":["Camel","Beige","Cream"],"buy_url":"https://example.com","image_url":ph_img("Camel+Tailored+Blazer")},
+    {"country":"United States","category":"Women","item_type":"Blazer","title":"Black Double-Breasted Blazer","price":"$90–$180","merchant":"Demo Retailer","colors":["Black","Charcoal"],"buy_url":"https://example.com","image_url":ph_img("Black+Blazer")},
+    {"country":"United States","category":"Women","item_type":"Wide-leg pants","title":"Ivory Wide-Leg Trousers","price":"$60–$140","merchant":"Demo Retailer","colors":["Ivory","Cream","White"],"buy_url":"https://example.com","image_url":ph_img("Ivory+Wide-Leg+Pants")},
+    {"country":"United States","category":"Women","item_type":"Knit sweater","title":"Forest Green Knit","price":"$45–$120","merchant":"Demo Retailer","colors":["Forest","Olive"],"buy_url":"https://example.com","image_url":ph_img("Forest+Knit")},
+    {"country":"United States","category":"Women","item_type":"Structured coat","title":"Navy Long Coat","price":"$120–$260","merchant":"Demo Retailer","colors":["Navy","Denim"],"buy_url":"https://example.com","image_url":ph_img("Navy+Coat")},
+    {"country":"United States","category":"Women","item_type":"Heels","title":"Burgundy Heels","price":"$40–$110","merchant":"Demo Retailer","colors":["Burgundy","Rust"],"buy_url":"https://example.com","image_url":ph_img("Burgundy+Heels")},
+    {"country":"United States","category":"Women","item_type":"Loafers","title":"Chocolate Loafers","price":"$60–$140","merchant":"Demo Retailer","colors":["Chocolate","Camel"],"buy_url":"https://example.com","image_url":ph_img("Chocolate+Loafers")},
+    {"country":"United States","category":"Women","item_type":"Dress","title":"Teal Slip Dress","price":"$70–$160","merchant":"Demo Retailer","colors":["Teal"],"buy_url":"https://example.com","image_url":ph_img("Teal+Slip+Dress")},
+    {"country":"United States","category":"Women","item_type":"Handbag","title":"Black Structured Bag","price":"$80–$220","merchant":"Demo Retailer","colors":["Black","Charcoal"],"buy_url":"https://example.com","image_url":ph_img("Black+Bag")},
+    {"country":"United States","category":"Women","item_type":"Jewelry","title":"Gold Minimal Jewelry Set","price":"$25–$90","merchant":"Demo Retailer","colors":["Mustard","Cream"],"buy_url":"https://example.com","image_url":ph_img("Gold+Jewelry")},
+
+    # ---------- UNITED STATES / MEN ----------
+    {"country":"United States","category":"Men","item_type":"Blazer","title":"Charcoal Blazer","price":"$120–$260","merchant":"Demo Retailer","colors":["Charcoal","Black","Slate"],"buy_url":"https://example.com","image_url":ph_img("Charcoal+Blazer")},
+    {"country":"United States","category":"Men","item_type":"Shirt","title":"White Oxford Shirt","price":"$40–$110","merchant":"Demo Retailer","colors":["White","Ivory","Cream"],"buy_url":"https://example.com","image_url":ph_img("White+Oxford+Shirt")},
+    {"country":"United States","category":"Men","item_type":"Jeans","title":"Dark Denim Straight Jeans","price":"$55–$140","merchant":"Demo Retailer","colors":["Denim","Navy"],"buy_url":"https://example.com","image_url":ph_img("Dark+Denim+Jeans")},
+    {"country":"United States","category":"Men","item_type":"Sneakers","title":"White Minimal Sneakers","price":"$60–$160","merchant":"Demo Retailer","colors":["White","Ivory"],"buy_url":"https://example.com","image_url":ph_img("White+Sneakers")},
+    {"country":"United States","category":"Men","item_type":"Coat","title":"Camel Overcoat","price":"$140–$320","merchant":"Demo Retailer","colors":["Camel","Beige","Tan"],"buy_url":"https://example.com","image_url":ph_img("Camel+Overcoat")},
+    {"country":"United States","category":"Men","item_type":"Watch","title":"Minimal Steel Watch","price":"$70–$220","merchant":"Demo Retailer","colors":["Gray","Slate","Charcoal"],"buy_url":"https://example.com","image_url":ph_img("Steel+Watch")},
+    {"country":"United States","category":"Men","item_type":"Belt","title":"Chocolate Leather Belt","price":"$25–$70","merchant":"Demo Retailer","colors":["Chocolate","Camel"],"buy_url":"https://example.com","image_url":ph_img("Leather+Belt")},
+
+    # ---------- INDIA / WOMEN ----------
+    {"country":"India","category":"Women","item_type":"Kurta set","title":"Ivory Kurta Set","price":"₹1,499–₹2,999","merchant":"Demo Retailer","colors":["Ivory","Cream","White"],"buy_url":"https://example.com","image_url":ph_img("Ivory+Kurta+Set")},
+    {"country":"India","category":"Women","item_type":"Saree","title":"Burgundy Saree","price":"₹1,999–₹4,999","merchant":"Demo Retailer","colors":["Burgundy","Rust"],"buy_url":"https://example.com","image_url":ph_img("Burgundy+Saree")},
+    {"country":"India","category":"Women","item_type":"Heels","title":"Nude Heels","price":"₹899–₹2,499","merchant":"Demo Retailer","colors":["Beige","Tan","Cream"],"buy_url":"https://example.com","image_url":ph_img("Nude+Heels")},
+    {"country":"India","category":"Women","item_type":"Handbag","title":"Black Sling Bag","price":"₹799–₹2,199","merchant":"Demo Retailer","colors":["Black","Charcoal"],"buy_url":"https://example.com","image_url":ph_img("Black+Sling+Bag")},
+    {"country":"India","category":"Women","item_type":"Jewelry","title":"Gold Earrings","price":"₹499–₹1,999","merchant":"Demo Retailer","colors":["Mustard","Cream"],"buy_url":"https://example.com","image_url":ph_img("Gold+Earrings")},
+
+    # ---------- INDIA / MEN ----------
+    {"country":"India","category":"Men","item_type":"Kurta","title":"Navy Kurta","price":"₹999–₹2,499","merchant":"Demo Retailer","colors":["Navy","Denim"],"buy_url":"https://example.com","image_url":ph_img("Navy+Kurta")},
+    {"country":"India","category":"Men","item_type":"Shirt","title":"Cream Linen Shirt","price":"₹899–₹2,299","merchant":"Demo Retailer","colors":["Cream","Ivory","Beige"],"buy_url":"https://example.com","image_url":ph_img("Cream+Linen+Shirt")},
+    {"country":"India","category":"Men","item_type":"Shoes","title":"Brown Loafers","price":"₹1,499–₹3,499","merchant":"Demo Retailer","colors":["Chocolate","Camel","Tan"],"buy_url":"https://example.com","image_url":ph_img("Brown+Loafers")},
+    {"country":"India","category":"Men","item_type":"Watch","title":"Minimal Watch (Leather Strap)","price":"₹1,299–₹3,999","merchant":"Demo Retailer","colors":["Chocolate","Charcoal"],"buy_url":"https://example.com","image_url":ph_img("Minimal+Watch")},
+]
+
+# Map common “shop keywords” → catalog item types (so Gemini keywords still match)
+ITEM_NORMALIZE = {
+    "Structured coat": "Structured coat",
+    "Coat": "Coat",
+    "Blazer": "Blazer",
+    "Wide-leg pants": "Wide-leg pants",
+    "Knit sweater": "Knit sweater",
+    "Heels": "Heels",
+    "Loafers": "Loafers",
+    "Sneakers": "Sneakers",
+    "Jeans": "Jeans",
+    "Shirt": "Shirt",
+    "Dress": "Dress",
+    "Handbag": "Handbag",
+    "Jewelry": "Jewelry",
+    "Kurta": "Kurta",
+    "Kurta set": "Kurta set",
+    "Saree": "Saree",
+    "Shoes": "Shoes",
+    "Watch": "Watch",
+    "Belt": "Belt",
+}
+
+def normalize_item_type(s: str) -> str:
+    s = (s or "").strip()
+    return ITEM_NORMALIZE.get(s, s)
+
+def catalog_search(country: str, category: str, item_type: str, color: str, limit: int = 9) -> List[dict]:
+    """
+    Returns curated products matching (country, category, item_type) and optionally color.
+    If color == "" or "All palette colors", returns best matches without color filter.
+    """
+    item_type = normalize_item_type(item_type)
+    color_norm = (color or "").strip().lower()
+
+    hits = []
+    for p in CATALOG:
+        if p.get("country") != country:
+            continue
+        if p.get("category") != category:
+            continue
+        if normalize_item_type(p.get("item_type", "")) != item_type:
+            continue
+
+        if not color_norm or color_norm == "all palette colors":
+            hits.append(p)
+        else:
+            cols = [str(c).strip().lower() for c in (p.get("colors") or [])]
+            if color_norm in cols:
+                hits.append(p)
+
+    # If color filtered and no hits, fall back to item matches (no color filter)
+    if color_norm and color_norm != "all palette colors" and not hits:
+        for p in CATALOG:
+            if p.get("country") == country and p.get("category") == category and normalize_item_type(p.get("item_type","")) == item_type:
+                hits.append(p)
+
+    return hits[:limit]
+
+def render_product_grid(products: List[dict], cols: int = 3):
+    if not products:
+        st.caption("No curated products found for this filter yet.")
+        return
+
+    grid = st.columns(cols)
+    for i, p in enumerate(products):
+        with grid[i % cols]:
+            img = p.get("image_url") or ""
+            if img:
+                st.image(img, use_container_width=True)
+
+            st.markdown(f"**{p.get('title','')}**")
+            meta = " · ".join([x for x in [p.get("price",""), p.get("merchant","")] if str(x).strip()])
+            if meta:
+                st.caption(meta)
+
+            link = p.get("buy_url") or ""
+            if link:
+                st.link_button("Buy / View ↗", link, use_container_width=True)
+
+
+# -----------------------------
+# UI STYLES
 # -----------------------------
 STYLING = """
 <style>
@@ -77,6 +210,7 @@ html, body, [class*="css"], .stMarkdown, p, li, div {
     color: #151515;
     line-height: 1.55 !important;
 }
+
 html, body { background: #f7f7f9 !important; }
 .stApp { background: #f7f7f9 !important; }
 
@@ -247,7 +381,7 @@ def safe_json_loads(text: str) -> Optional[dict]:
 
 
 # -----------------------------
-# LINKS
+# LINKS (FALLBACK)
 # -----------------------------
 def build_celeb_google_images_url(query: str) -> str:
     return f"https://www.google.com/search?tbm=isch&q={_enc(query)}"
@@ -258,22 +392,13 @@ def build_pinterest_url(query: str) -> str:
 def build_google_shop_url(query: str) -> str:
     return f"https://www.google.com/search?tbm=shop&q={_enc(query)}"
 
-def _enc_retailer(domain_or_url: str) -> str:
-    s = str(domain_or_url).strip()
-    s = s.replace("https://", "").replace("http://", "")
-    s = s.split("/")[0]
-    return s
-
-def build_retailer_site_search(domain: str, query: str) -> str:
-    return f"https://www.google.com/search?q=site:{_enc(_enc_retailer(domain))}+{_enc(query)}"
-
 def build_shop_query(color: str, item: str, category: str, country: str) -> str:
     parts = [p for p in [color, item, category, country] if str(p).strip()]
     return " ".join(parts)
 
 
 # -----------------------------
-# COUNTRY + RETAILERS
+# COUNTRIES + RETAILERS (for fallback “View more”)
 # -----------------------------
 COUNTRIES = {
     "United States": {"gl": "US", "retailers": {"Nordstrom": "nordstrom.com", "Amazon": "amazon.com", "Zara": "zara.com/us", "H&M": "hm.com/us"}},
@@ -432,15 +557,27 @@ def offline_complexion_profile(img: Image.Image) -> dict:
     pal = _dominant_palette(img, k=8)
 
     if not face:
-        return {"label": "Outfit palette", "expert_palette": pal[:5], "morning_palette": pal[:5], "evening_palette": pal[:5],
-                "analysis_mode": "Outfit (fallback)", "complexion": {"undertone": "", "depth": ""},
-                "complexion_note": "No face detected — using outfit colors instead."}
+        return {
+            "label":"Outfit palette",
+            "expert_palette":pal[:5],
+            "morning_palette":pal[:5],
+            "evening_palette":pal[:5],
+            "analysis_mode":"Outfit (fallback)",
+            "complexion":{"undertone":"","depth":""},
+            "complexion_note":"No face detected — using outfit colors instead."
+        }
 
     mean_rgb, skin_ratio = sample_skin_rgb(img, face)
     if mean_rgb is None or skin_ratio < 0.02:
-        return {"label": "Outfit palette", "expert_palette": pal[:5], "morning_palette": pal[:5], "evening_palette": pal[:5],
-                "analysis_mode": "Outfit (fallback)", "complexion": {"undertone": "", "depth": ""},
-                "complexion_note": "Could not sample skin confidently — using outfit colors instead."}
+        return {
+            "label":"Outfit palette",
+            "expert_palette":pal[:5],
+            "morning_palette":pal[:5],
+            "evening_palette":pal[:5],
+            "analysis_mode":"Outfit (fallback)",
+            "complexion":{"undertone":"","depth":""},
+            "complexion_note":"Could not sample skin confidently — using outfit colors instead."
+        }
 
     undertone, depth = classify_undertone_and_depth(mean_rgb)
 
@@ -453,9 +590,14 @@ def offline_complexion_profile(img: Image.Image) -> dict:
     morning = [p for _, p in scored[:5]]
     evening = [p for _, p in scored[-5:]][::-1]
 
-    return {"label": f"{undertone} undertone · {depth} depth", "expert_palette": pal[:5], "morning_palette": morning[:5],
-            "evening_palette": evening[:5], "analysis_mode": "Complexion (recommended)",
-            "complexion": {"undertone": undertone, "depth": depth, "skin_rgb": mean_rgb, "skin_ratio": skin_ratio}}
+    return {
+        "label": f"{undertone} undertone · {depth} depth",
+        "expert_palette": pal[:5],
+        "morning_palette": morning[:5],
+        "evening_palette": evening[:5],
+        "analysis_mode": "Complexion (recommended)",
+        "complexion": {"undertone": undertone, "depth": depth, "skin_rgb": mean_rgb, "skin_ratio": skin_ratio},
+    }
 
 
 # -----------------------------
@@ -572,8 +714,7 @@ Analyze the photo and return JSON with keys:
 - formality: one of ["casual","smart casual","work","evening","formal"]
 - style_keywords: array of 6-10 tags
 - clothing_items: array of 3-6 clothing pieces (ONLY clothing)
-- accessory_items: array of 2-6 accessories (jewelry/bag/shoes)
-- recommended_shop_keywords: array of 8 search queries (no brand names) for {category} in {country}
+- accessory_items: array of 2-6 accessories (jewelry/bag/shoes/watch/belt)
 - palette_advice: {{ "morning_best": [..], "evening_best":[..], "avoid":[..] }}
 - color_pairings: array of 3 pairings like "Camel + Cream + Gold"
 - explanation: 2-3 sentences
@@ -613,7 +754,7 @@ Schema:
             "trend_summary": f"Across {country}, the mood is refined and wearable: {', '.join(news[:3])}.",
             "style_translation": ["Anchor looks in your palette.", "Prioritize structure (clean shoulders, straight hems).", "Keep accessories minimal; let texture do the work."],
             "outfit_idea": "A modern minimal edit: crisp top + tailored bottom + a sleek layer in your palette.",
-            "shop_keywords": ["Blazer", "Wide-leg pants", "Heels", "Loafers", "Structured coat", "Knit sweater"],
+            "shop_keywords": ["Blazer", "Wide-leg pants", "Knit sweater", "Structured coat", "Loafers", "Sneakers"],
         }
     return j
 
@@ -805,7 +946,7 @@ def render_upload_screen():
             st.caption("Generate a regional lookbook + curated shopping (Gemini text).")
             if st.button("Open Lookbook", use_container_width=True, key="open_lookbook"):
                 news, celebs = get_country_context(country, category)
-                with st.spinner("Building your regional lookbook (Gemini)…"):
+                with st.spinner("Building your regional lookbook…"):
                     lb = gemini_lookbook_text(country, category, style, news, celebs)
                 st.session_state["lookbook"] = lb
                 st.session_state["celebs_for_lookbook"] = celebs
@@ -814,7 +955,7 @@ def render_upload_screen():
 
 
 # -----------------------------
-# LOOKBOOK VIEW (NO CELEB IMAGES)
+# LOOKBOOK VIEW (WITH IN-APP CURATED SHOPPING)
 # -----------------------------
 def render_lookbook_screen():
     country = st.session_state.get("country", "United States")
@@ -844,6 +985,7 @@ def render_lookbook_screen():
 
     tab1, tab2 = st.tabs(["Trend Intelligence", "Curated Shopping"])
 
+    # -------------------- Trend Intelligence
     with tab1:
         st.markdown("<div class='card'>", unsafe_allow_html=True)
         st.info(lb.get("trend_summary", ""))
@@ -857,7 +999,7 @@ def render_lookbook_screen():
         st.markdown("</div>", unsafe_allow_html=True)
 
         st.markdown("<div class='card' style='margin-top:12px;'>", unsafe_allow_html=True)
-        st.subheader(f"{category} icons in {country} (matched to your palette + style)")
+        st.subheader(f"{category} icons in {country} (palette-matched)")
 
         palette_names = [p.get("name") for p in (style.get("expert_palette") or []) if p.get("name")] or []
         palette_hint = ", ".join(palette_names[:5]) if palette_names else "your palette"
@@ -878,14 +1020,19 @@ def render_lookbook_screen():
                 pin_q = f"{celeb} {country} street style"
                 if pin_color and pin_color != "All palette colors":
                     pin_q = f"{celeb} {pin_color} outfit"
-
                 st.link_button("Pinterest", build_pinterest_url(pin_q), use_container_width=True)
+
         st.markdown("</div>", unsafe_allow_html=True)
 
+    # -------------------- Curated Shopping (IN-APP)
     with tab2:
         st.markdown("<div class='card'>", unsafe_allow_html=True)
-        st.markdown("## Curated Shopping (Gemini + palette)")
-        st.caption("Choose **Morning** or **Evening** — the entire shopping experience uses that palette (colors + accessories).")
+        st.markdown("## Curated Shopping (in-app catalog)")
+
+        st.caption(
+            "This demo uses a **curated catalog** (safe + reliable). "
+            "Swap the demo products in `CATALOG` with real links/images anytime."
+        )
 
         day_or_night = st.radio("Shop for", ["☀️ Morning (day)", "🌙 Evening (night)"], horizontal=True, key="shop_day_night")
         is_morning = day_or_night.startswith("☀️")
@@ -895,44 +1042,54 @@ def render_lookbook_screen():
         palette_names = unique_keep_order([p.get("name") for p in palette if p.get("name")])
         palette_dropdown = ["All palette colors"] + palette_names
 
-        retailers = (COUNTRIES.get(country, {}).get("retailers") or COUNTRIES["United States"]["retailers"])
-        retailer_names = list(retailers.keys())
-
+        # Items from lookbook (Gemini), normalized to your catalog
         items = unique_keep_order((lb.get("shop_keywords") or [])[:10])
         if not items:
-            items = ["Blazer", "Wide-leg pants", "Heels", "Loafers", "Structured coat", "Knit sweater"]
+            items = ["Blazer", "Wide-leg pants", "Knit sweater", "Structured coat", "Loafers", "Sneakers"]
 
-        accessories = ["shoes", "bag", "jewelry"] if category == "Women" else ["shoes", "watch", "belt"]
+        # Accessories in-app too (optional)
+        accessories = ["Handbag", "Jewelry", "Heels"] if category == "Women" else ["Watch", "Belt", "Shoes"]
 
         for item in items:
-            st.markdown(f"### {item}")
-            c1, c2, c3 = st.columns([2.2, 1, 1])
-            with c1:
-                picked = st.selectbox("", palette_dropdown, key=f"shop_color_{item}_{'m' if is_morning else 'e'}", label_visibility="collapsed")
+            item_type = normalize_item_type(item)
+            st.markdown(f"### {item_type}")
 
-            color_for_links = "" if picked == "All palette colors" else picked
-            q = build_shop_query(color_for_links, item, category, country)
+            chosen_color = st.selectbox(
+                "Filter by your palette",
+                palette_dropdown,
+                key=f"catalog_color_{item_type}_{'m' if is_morning else 'e'}",
+            )
+            color_for_filter = "" if chosen_color == "All palette colors" else chosen_color
 
-            with c2:
-                r1 = retailer_names[0] if retailer_names else "Retailer 1"
-                st.link_button(f"{r1} ↗", build_retailer_site_search(retailers.get(r1, ""), q), use_container_width=True)
-            with c3:
-                r2 = retailer_names[1] if len(retailer_names) > 1 else retailer_names[0]
-                st.link_button(f"{r2} ↗", build_retailer_site_search(retailers.get(r2, ""), q), use_container_width=True)
+            products = catalog_search(country, category, item_type, color_for_filter, limit=9)
 
-            exp_label = "✨ Complete the look (shoes · bag · jewelry)" if category == "Women" else "✨ Complete the look (shoes · watch · belt)"
-            with st.expander(exp_label, expanded=False):
+            st.markdown("#### Suggested picks")
+            render_product_grid(products, cols=3)
+
+            # Fallback / view more (still allowed)
+            q = build_shop_query(color_for_filter, item_type, category, country)
+            with st.expander("View more (Pinterest + Google Shopping)", expanded=False):
                 st.link_button("Pinterest ↗", build_pinterest_url(q), use_container_width=True)
                 st.link_button("Google Shopping ↗", build_google_shop_url(q), use_container_width=True)
 
-                st.markdown("**Accessories**")
-                acc_cols = st.columns(3)
-                for i, acc in enumerate(accessories):
-                    with acc_cols[i % 3]:
-                        acc_q = build_shop_query(color_for_links, acc, category, country)
-                        st.link_button(f"{acc.title()} ↗", build_google_shop_url(acc_q), use_container_width=True)
-
             st.markdown("<hr>", unsafe_allow_html=True)
+
+        st.markdown("### ✨ Complete the look")
+        st.caption("Accessories also come from the curated catalog (edit `CATALOG` to add more).")
+
+        acc_cols = st.columns(3)
+        for i, acc in enumerate(accessories):
+            with acc_cols[i % 3]:
+                st.markdown(f"**{acc}**")
+                chosen_color = st.selectbox(
+                    "Palette filter",
+                    palette_dropdown,
+                    key=f"acc_color_{acc}_{'m' if is_morning else 'e'}",
+                    label_visibility="collapsed",
+                )
+                color_for_filter = "" if chosen_color == "All palette colors" else chosen_color
+                products = catalog_search(country, category, acc, color_for_filter, limit=3)
+                render_product_grid(products, cols=1)
 
         st.markdown("</div>", unsafe_allow_html=True)
 
