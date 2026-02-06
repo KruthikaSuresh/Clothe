@@ -9,14 +9,14 @@ The system follows an **offline-first architecture**, using local computer visio
 
 ## Key Features
 
-### ðŸ§  Style & Color Analysis (Offline-First)
+### Style & Color Analysis (Offline-First)
 - Dominant color palette extraction from the outfit
 - Optional face detection for complexion-aware analysis
 - Undertone (warm / cool / neutral) and depth estimation
 - Morning vs Evening palette recommendations
 - Graceful fallback to outfit-only analysis if no face is detected
 
-### âœ¨ Gemini-Powered Enhancements (Optional)
+### Gemini-Powered Enhancements (Optional)
 - Structured style insights from the uploaded photo
 - Outfit summary, style tags, and color pairing advice
 - Regional lookbook generation using fashion trends
@@ -24,13 +24,13 @@ The system follows an **offline-first architecture**, using local computer visio
 - Automatic Gemini model resolution (avoids unsupported models)
 - API key rotation to handle quota and rate limits
 
-### ðŸŒ Regional Fashion Intelligence
+### Regional Fashion Intelligence
 - Country-specific fashion trends via Google News RSS
 - Cultural style grounding using representative fashion icons
 - Region-aware retailer links (US, India, UK, Japan)
 - No celebrity images stored or displayed (links only)
 
-### ðŸ›ï¸ Curated Shopping Experience
+### Curated Shopping Experience
 - Morning / Evening shopping modes
 - Palette-driven item search
 - Google Shopping & Pinterest discovery links
