@@ -1,5 +1,5 @@
 # LOOKBOOK AI  
-### Global Style Intelligence Â· Personalized Fashion Curation
+### Global Style Intelligence A· Personalized Fashion Curation
 
 LOOKBOOK AI is a Streamlit-based fashion intelligence application that analyzes an uploaded outfit photo to generate a **personalized color palette, style insight, and region-specific lookbook**.
 
@@ -55,10 +55,10 @@ The system follows an **offline-first architecture**, using local computer visio
 
 ```
 .
-â”œâ”€â”€ app.py                # Main Streamlit application
-â”œâ”€â”€ .env                  # Environment variables (not committed)
-â”œâ”€â”€ requirements.txt      # Dependencies
-â””â”€â”€ README.md
+app.py                # Main Streamlit application
+.env                  # Environment variables (not committed)
+requirements.txt      # Dependencies
+README.md
 ```
 
 ---
