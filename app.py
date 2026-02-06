@@ -1,10 +1,4 @@
-# app.py (FULL UPDATED — Celebrity IMAGES REMOVED, Google Images + Pinterest KEPT)
-# ✅ Trend Intelligence: celeb names + text + Google Images + Pinterest buttons (NO images)
-# ✅ Curated Shopping (Gemini + palette)
-# ✅ Sidebar: change image available, clean “Gemini model used”
-# ✅ Gemini: prefers gemini-3-*-preview (avoids 404 model issues)
-# ✅ Local palette analysis works without Gemini too
-
+# app.py 
 import os
 import re
 import json
